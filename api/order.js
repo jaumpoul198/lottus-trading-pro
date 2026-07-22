@@ -1,232 +1,238 @@
 const WebSocket = require("ws");
 
-export default async function handler(req, res) {
+export default async function handler(req,res){
 
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Método não permitido"
-    });
-  }
+if(req.method !== "POST"){
+return res.status(405).json({
+error:"Método não permitido"
+});
+}
 
 
-  const {
-    contract_type,
-    amount,
-    symbol
-  } = req.body;
+const {
+contract_type,
+amount,
+symbol
+}=req.body;
 
 
+const appId = process.env.DERIV_APP_ID;
+const token = process.env.DERIV_TOKEN;
 
-  const appId = process.env.DERIV_APP_ID;
-  const token = process.env.DERIV_TOKEN;
 
+if(!appId || !token){
 
+return res.status(500).json({
+error:"Credenciais ausentes"
+});
 
-  if (!appId || !token) {
+}
 
-    return res.status(500).json({
-      error:"Credenciais Deriv ausentes"
-    });
 
-  }
 
+try{
 
 
-  try {
+const ws = new WebSocket(
+`wss://ws.derivws.com/websockets/v3?app_id=${appId}`
+);
 
 
-    const ws = new WebSocket(
-      `wss://ws.derivws.com/websockets/v3?app_id=${appId}`
-    );
 
+const result = await new Promise((resolve,reject)=>{
 
 
-    const contract = await new Promise((resolve,reject)=>{
+let proposalId=null;
 
 
-      const timeout=setTimeout(()=>{
+const timeout=setTimeout(()=>{
 
-        reject(
-          new Error("Timeout aguardando Deriv")
-        );
+reject(
+new Error("Timeout Deriv")
+);
 
-      },20000);
+},20000);
 
 
 
-      ws.on("open",()=>{
+ws.on("open",()=>{
 
 
-        console.log("WebSocket aberto");
+ws.send(JSON.stringify({
 
+authorize:token
 
-        ws.send(JSON.stringify({
+}));
 
-          authorize: token
+});
 
-        }));
 
 
-      });
 
+ws.on("message",(msg)=>{
 
 
-      ws.on("message",(msg)=>{
+const data =
+JSON.parse(msg.toString());
 
 
-        const data =
-          JSON.parse(msg.toString());
+console.log(
+"DERIV RESPONSE:",
+data
+);
 
 
-        console.log(
-          "DERIV:",
-          JSON.stringify(data)
-        );
 
+if(data.error){
 
+clearTimeout(timeout);
 
-        if(data.error){
+reject(
+new Error(data.error.message)
+);
 
-          clearTimeout(timeout);
+ws.close();
 
-          reject(
-            new Error(
-              data.error.message
-            )
-          );
+return;
 
-          ws.close();
+}
 
-          return;
 
-        }
 
 
+// AUTORIZADO
 
-        if(data.authorize){
+if(data.authorize){
 
 
-          console.log(
-            "Autorizado",
-            data.authorize.loginid
-          );
+console.log(
+"Conta:",
+data.authorize.loginid
+);
 
 
 
-          ws.send(JSON.stringify({
+ws.send(JSON.stringify({
 
-            buy:1,
+proposal:1,
 
-            price:Number(amount),
+amount:Number(amount),
 
+basis:"stake",
 
-            parameters:{
+contract_type:contract_type,
 
+currency:"USD",
 
-              amount:Number(amount),
+duration:5,
 
+duration_unit:"m",
 
-              basis:"stake",
+symbol:symbol
 
 
-              contract_type:contract_type,
+}));
 
+}
 
-              currency:"USD",
 
 
-              duration:5,
 
+// PROPOSTA RECEBIDA
 
-              duration_unit:"m",
+if(data.proposal){
 
 
-              symbol:symbol,
+proposalId =
+data.proposal.id;
 
 
-              product_type:"basic"
+console.log(
+"Proposal:",
+proposalId
+);
 
-            }
 
 
-          }));
+ws.send(JSON.stringify({
 
+buy:proposalId,
 
-        }
+price:Number(amount)
 
+}));
 
+}
 
 
-        if(data.buy){
 
 
-          clearTimeout(timeout);
+// COMPRA EXECUTADA
 
+if(data.buy){
 
 
-          resolve(
-            data.buy
-          );
+clearTimeout(timeout);
 
 
+resolve(
+data.buy
+);
 
-          ws.close();
 
+ws.close();
 
-        }
 
+}
 
-      });
 
 
+});
 
 
-      ws.on("error",(err)=>{
 
+ws.on("error",err=>{
 
-        clearTimeout(timeout);
+clearTimeout(timeout);
 
+reject(err);
 
-        reject(err);
+});
 
 
-      });
+});
 
 
 
-    });
+return res.status(200).json({
 
+status:"Contrato criado",
 
+contract:result
 
+});
 
-    return res.status(200).json({
 
-      status:"Contrato criado",
 
-      contract:contract
+}catch(error){
 
-    });
 
+console.log(
+"ERRO:",
+error.message
+);
 
 
-  }catch(error){
+return res.status(400).json({
 
+status:"Erro ordem",
 
-    console.log(
-      "ERRO DERIV",
-      error.message
-    );
+message:error.message
 
+});
 
-    return res.status(400).json({
 
-      status:"Erro ordem",
+}
 
-      message:error.message
-
-    });
-
-
-  }
 
 }
