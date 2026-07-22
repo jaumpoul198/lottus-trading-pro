@@ -4,222 +4,279 @@
  */
 
 (function () {
-  'use strict';
 
-  const CONFIG = {
+'use strict';
+
+
+const CONFIG = {
+
     SYMBOL: '1HZ100V',
+
     TRADE_AMOUNT: 1,
-    DURATION_MINUTES: 5,
-  };
 
-  const state = {
-    ws: null,
-    connected: false,
-    lastPrice: null,
-    authorized: false,
-  };
+    DURATION_MINUTES: 5
 
-
-  // ============================================
-  // CONEXÃO SEGURA VIA BACKEND
-  // ============================================
-
-  async function connect() {
-    try {
-      console.log('🔗 Conectando Lottus API Deriv...');
-
-
-      const response = await fetch('/api/deriv');
-
-      const api = await response.json();
-
-
-      if (!response.ok) {
-        console.error('❌ Erro API Deriv:', api);
-        return;
-      }
-
-
-      if (!api.token_configured || !api.app_id_configured) {
-        console.error('❌ Credenciais Deriv não configuradas na Vercel');
-        return;
-      }
-
-
-      console.log('✅ API Deriv autorizada');
-
-      /*
-        Próxima etapa:
-        O backend irá retornar
-        o websocket seguro da Deriv
-      */
-
-
-      const statusText = document.getElementById('statusText');
-
-      if (statusText) {
-        statusText.textContent = 'API Deriv Online';
-      }
-
-
-      const brokerName = document.getElementById('brokerName');
-
-      if (brokerName) {
-        brokerName.textContent = 'Deriv';
-      }
-
-
-      if (window.__lottusState) {
-        window.__lottusState.connected = true;
-        window.__lottusState.broker = 'Deriv';
-      }
-
-
-      state.connected = true;
-      state.authorized = true;
-
-
-    } catch (error) {
-
-      console.error(
-        '❌ Falha conexão Deriv:',
-        error
-      );
-
-    }
-  }
+};
 
 
 
-  // ============================================
-  // ENVIAR ORDEM
-  // ============================================
+const state = {
 
-  async function placeOrder(
-    type,
-    amount = CONFIG.TRADE_AMOUNT
-  ) {
+    connected:false,
 
-    try {
+    authorized:false,
 
-      const response = await fetch(
-        '/api/deriv',
-        {
-          method: 'POST',
+    lastPrice:null
 
-          headers: {
-            'Content-Type': 'application/json'
-          },
-
-          body: JSON.stringify({
-
-            action: 'buy',
-
-            contract_type: type,
-
-            symbol: CONFIG.SYMBOL,
-
-            amount: amount,
-
-            duration: CONFIG.DURATION_MINUTES
-
-          })
-        }
-      );
+};
 
 
-      const result = await response.json();
+
+// ============================================
+// CONECTAR DERIV VIA BACKEND
+// ============================================
+
+async function connect(){
+
+    try{
 
 
-      if (!response.ok) {
-
-        console.error(
-          '❌ Erro ordem:',
-          result
+        console.log(
+            '🔗 Conectando Lottus API Deriv...'
         );
 
-        return;
-
-      }
 
 
-      console.log(
-        '✅ Ordem enviada:',
-        result
-      );
+        const response =
+            await fetch('/api/deriv');
 
 
-    } catch (error) {
 
-      console.error(
-        '❌ Falha enviar ordem:',
-        error
-      );
+        const data =
+            await response.json();
+
+
+
+        if(!response.ok){
+
+            console.error(
+                '❌ Erro Deriv:',
+                data
+            );
+
+            return;
+
+        }
+
+
+
+        if(data.status !== "Conectado"){
+
+            console.error(
+                '❌ Deriv não conectado:',
+                data
+            );
+
+            return;
+
+        }
+
+
+
+        console.log(
+            '✅ Deriv WebSocket conectado'
+        );
+
+
+
+        state.connected = true;
+
+        state.authorized = true;
+
+        state.lastPrice = data.price;
+
+
+
+        atualizarInterface();
+
+
+
+        if(window.__lottusState){
+
+            window.__lottusState.connected = true;
+
+            window.__lottusState.broker = "Deriv";
+
+            window.__lottusState.currentPrices[
+                CONFIG.SYMBOL
+            ] = data.price;
+
+        }
+
+
+
+        console.log(
+            '📡',
+            CONFIG.SYMBOL,
+            data.price
+        );
+
+
+
+    }catch(error){
+
+
+        console.error(
+            '❌ Falha conexão Deriv:',
+            error
+        );
+
 
     }
 
-  }
+
+}
 
 
 
-  function isAuthorized() {
+// ============================================
+// INTERFACE
+// ============================================
 
-    return state.authorized;
-
-  }
+function atualizarInterface(){
 
 
+    const status =
+        document.getElementById(
+            'statusText'
+        );
 
-  // ============================================
-  // API GLOBAL
-  // ============================================
 
-  window.DerivIntegration = {
+    if(status){
+
+        status.textContent =
+            'Deriv Conectado';
+
+    }
+
+
+
+    const broker =
+        document.getElementById(
+            'brokerName'
+        );
+
+
+    if(broker){
+
+        broker.textContent =
+            'Deriv';
+
+    }
+
+
+}
+
+
+
+// ============================================
+// PREÇO ATUAL
+// ============================================
+
+function getPrice(){
+
+    return state.lastPrice;
+
+}
+
+
+
+// ============================================
+// ORDENS (PREPARADO PARA PRÓXIMA ETAPA)
+// ============================================
+
+async function placeOrder(type){
+
+
+    console.log(
+        '📈 Ordem solicitada:',
+        type,
+        CONFIG.SYMBOL
+    );
+
+
+    /*
+      Próxima etapa:
+      ligar endpoint de compra
+      na Deriv
+    */
+
+
+}
+
+
+
+// ============================================
+// STATUS
+// ============================================
+
+function isAuthorized(){
+
+    return state.connected;
+
+}
+
+
+
+// ============================================
+// API GLOBAL
+// ============================================
+
+window.DerivIntegration = {
+
 
     connect,
 
     placeOrder,
 
-    getPrice: () => state.lastPrice,
+    getPrice,
 
     isAuthorized,
 
-    config: CONFIG
-
-  };
+    config:CONFIG
 
 
-
-  // ============================================
-  // START AUTOMÁTICO
-  // ============================================
+};
 
 
-  console.log(
+
+// ============================================
+// START AUTOMÁTICO
+// ============================================
+
+console.log(
     '🚀 Lottus Deriv Integration iniciada'
-  );
-
-  console.log(
-    '🔐 Credenciais protegidas pela Vercel'
-  );
+);
 
 
-  if (document.readyState === 'loading') {
+
+if(document.readyState === 'loading'){
 
 
     document.addEventListener(
-      'DOMContentLoaded',
-      () => setTimeout(connect, 1500)
+        'DOMContentLoaded',
+        ()=>setTimeout(connect,1500)
     );
 
 
-  } else {
+}else{
 
 
-    setTimeout(connect, 1500);
+    setTimeout(connect,1500);
 
 
-  }
+}
+
 
 
 })();
