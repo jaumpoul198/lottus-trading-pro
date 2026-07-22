@@ -195,26 +195,89 @@ function getPrice(){
 // ORDENS (PREPARADO PARA PRÓXIMA ETAPA)
 // ============================================
 
-async function placeOrder(type){
+async function placeOrder(type, amount = CONFIG.TRADE_AMOUNT){
+
+    try {
+
+        console.log(
+            '📈 Enviando ordem Deriv:',
+            type,
+            CONFIG.SYMBOL,
+            amount
+        );
 
 
-    console.log(
-        '📈 Ordem solicitada:',
-        type,
-        CONFIG.SYMBOL
-    );
+        const contractType =
+            type === 'BUY' || type === 'CALL'
+            ? 'CALL'
+            : 'PUT';
 
 
-    /*
-      Próxima etapa:
-      ligar endpoint de compra
-      na Deriv
-    */
 
+        const response = await fetch('/api/order', {
+
+            method:'POST',
+
+            headers:{
+                'Content-Type':'application/json'
+            },
+
+            body:JSON.stringify({
+
+                contract_type: contractType,
+
+                amount: amount,
+
+                symbol: CONFIG.SYMBOL
+
+            })
+
+        });
+
+
+
+        const data = await response.json();
+
+
+
+        if(!response.ok){
+
+            console.error(
+                '❌ Erro ordem Deriv:',
+                data
+            );
+
+            return null;
+
+        }
+
+
+
+        console.log(
+            '✅ Ordem Deriv executada:',
+            data
+        );
+
+
+        return data;
+
+
+
+    }catch(error){
+
+
+        console.error(
+            '❌ Falha envio ordem:',
+            error
+        );
+
+
+        return null;
+
+
+    }
 
 }
-
-
 
 // ============================================
 // STATUS
