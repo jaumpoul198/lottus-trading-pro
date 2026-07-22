@@ -1,230 +1,307 @@
 const WebSocket = require("ws");
 
-export default async function handler(req,res){
 
-    if(req.method !== "POST"){
-        return res.status(405).json({
-            error:"Método não permitido"
-        });
-    }
+export default async function handler(req, res) {
 
 
-    const {
-        contract_type,
-        amount
-    } = req.body;
+if(req.method !== "POST"){
 
+    return res.status(405).json({
+        error:"Método não permitido"
+    });
 
-    const appId = process.env.DERIV_APP_ID;
-    const token = process.env.DERIV_TOKEN;
+}
 
 
-    if(!appId || !token){
 
-        return res.status(500).json({
-            error:"Credenciais ausentes"
-        });
+const {
+    contract_type,
+    amount
+} = req.body;
 
-    }
 
 
-    try{
+const appId = process.env.DERIV_APP_ID;
+const token = process.env.DERIV_TOKEN;
 
 
-        const ws = new WebSocket(
-            `wss://ws.derivws.com/websockets/v3?app_id=${appId}`
-        );
 
+console.log("ORDER DEBUG",{
+    appId,
+    tokenLength: token ? token.length : 0,
+    contract_type,
+    amount
+});
 
 
-        const contract = await new Promise((resolve,reject)=>{
 
+if(!appId || !token){
 
-            let proposalId = null;
+    return res.status(500).json({
 
+        error:"Credenciais Deriv ausentes"
 
-            const timeout=setTimeout(()=>{
+    });
 
-                reject(
-                    new Error("Timeout Deriv")
-                );
+}
 
-            },20000);
 
 
+try{
 
-            ws.on("open",()=>{
 
+// ===============================
+// 1 - GERAR OTP
+// ===============================
 
-                console.log(
-                    "WS ABERTO"
-                );
 
+const otpResponse = await fetch(
 
-                ws.send(JSON.stringify({
+"https://api.derivws.com/trading/v1/options/accounts/DOT93838295/otp",
 
-                    authorize:token
+{
 
-                }));
+method:"POST",
 
+headers:{
 
-            });
+"Deriv-App-ID":appId,
 
+"Authorization":`Bearer ${token}`,
 
+"Content-Type":"application/json"
 
-            ws.on("message",(msg)=>{
+}
 
+}
 
-                const data =
-                    JSON.parse(msg.toString());
+);
 
 
-                console.log(
-                    "DERIV RESPONSE",
-                    data
-                );
 
+const otpData = await otpResponse.json();
 
 
-                if(data.error){
 
-                    clearTimeout(timeout);
+console.log("OTP RESPONSE",otpData);
 
-                    reject(
-                        new Error(
-                            data.error.message
-                        )
-                    );
 
-                    return;
 
-                }
+if(!otpData.data || !otpData.data.url){
 
+    throw new Error(
+        "Falha ao gerar OTP Deriv"
+    );
 
+}
 
-                if(data.authorize){
 
 
-                    console.log(
-                        "AUTORIZADO"
-                    );
+const wsUrl = otpData.data.url;
 
 
-                    ws.send(JSON.stringify({
 
-                        proposal:1,
+// ===============================
+// 2 - CONECTAR WEBSOCKET OTP
+// ===============================
 
-                        amount:Number(amount),
 
-                        basis:"stake",
+const ws = new WebSocket(wsUrl);
 
-                        contract_type:contract_type,
 
-                        currency:"USD",
 
-                        duration:5,
+const result = await new Promise((resolve,reject)=>{
 
-                        duration_unit:"m",
 
-                        symbol:"1HZ100V"
 
-                    }));
+const timeout=setTimeout(()=>{
 
 
-                }
+reject(
+new Error("Timeout WebSocket compra")
+);
 
 
+},20000);
 
-                if(data.proposal){
 
 
-                    proposalId =
-                        data.proposal.id;
+ws.on("open",()=>{
 
 
+console.log(
+"WebSocket OTP conectado"
+);
 
-                    console.log(
-                        "PROPOSTA",
-                        proposalId
-                    );
 
 
+ws.send(JSON.stringify({
 
-                    ws.send(JSON.stringify({
+proposal:1,
 
-                        buy:proposalId,
+amount:Number(amount),
 
-                        price:Number(amount)
+basis:"stake",
 
-                    }));
+contract_type:contract_type,
 
+currency:"USD",
 
-                }
+duration:5,
 
+duration_unit:"m",
 
+symbol:"1HZ100V"
 
-                if(data.buy){
+}));
 
 
-                    clearTimeout(timeout);
+});
 
+ws.on("message",(msg)=>{
 
-                    resolve(data.buy);
 
+const data =
+JSON.parse(msg.toString());
 
-                    ws.close();
 
 
-                }
+console.log(
+"DERIV ORDER RESPONSE",
+data
+);
 
 
 
-            });
+if(data.error){
 
 
+clearTimeout(timeout);
 
-            ws.on("error",(err)=>{
 
-                clearTimeout(timeout);
+reject(
+new Error(
+data.error.message
+)
+);
 
-                reject(err);
 
-            });
+return;
 
+}
 
-        });
 
 
 
-        return res.status(200).json({
+// recebeu proposta
 
-            status:"Contrato criado",
+if(data.proposal){
 
-            contract:contract
 
-        });
+console.log(
+"PROPOSAL RECEBIDA",
+data.proposal.id
+);
 
 
 
-    }catch(error){
+ws.send(JSON.stringify({
 
 
-        console.error(
-            "ORDER ERROR",
-            error
-        );
+buy:data.proposal.id,
 
 
-        return res.status(400).json({
+price:Number(amount)
 
-            status:"Erro ordem",
 
-            message:error.message
+}));
 
-        });
 
+}
 
-    }
+
+
+
+// compra executada
+
+if(data.buy){
+
+
+
+clearTimeout(timeout);
+
+
+
+resolve(data.buy);
+
+
+
+ws.close();
+
+
+
+}
+
+
+
+});
+
+
+
+
+ws.on("error",(err)=>{
+
+
+clearTimeout(timeout);
+
+
+reject(err);
+
+
+});
+
+
+
+});
+
+
+
+
+return res.status(200).json({
+
+
+status:"Contrato comprado",
+
+
+contract:result
+
+
+
+});
+
+
+
+
+}catch(error){
+
+
+console.log(
+"ORDER ERROR",
+error
+);
+
+
+
+return res.status(400).json({
+
+status:"Erro ordem",
+
+message:error.message
+
+});
+
+
+}
 
 
 }
