@@ -1,305 +1,133 @@
-const WebSocket = require("ws");
-
+const WebSocket = require('ws');
 
 export default async function handler(req, res) {
+  // 1. Validação básica de método
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
 
+  const {
+    account_id,
+    symbol,
+    contract_type, // 'CALL' ou 'PUT'
+    amount,
+    duration,
+    duration_unit = 't' // default ticks
+  } = req.body;
 
-if(req.method !== "POST"){
+  const token = process.env.DERIV_TOKEN;
+  const appId = process.env.DERIV_APP_ID;
 
-    return res.status(405).json({
-        error:"Método não permitido"
+  if (!account_id || !symbol || !contract_type || !amount || !duration) {
+    return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes.' });
+  }
+
+  try {
+    // 2. Obter OTP da nova API REST e URL autenticada
+    const otpResponse = await fetch(`https://api.derivws.com/trading/v1/options/accounts/${account_id}/otp`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Deriv-App-ID': appId,
+        'Content-Type': 'application/json'
+      }
     });
 
-}
+    const otpData = await otpResponse.json();
 
+    if (!otpResponse.ok) {
+      throw new Error(otpData.error?.message || 'Falha ao obter OTP da Deriv');
+    }
 
+    const wsUrl = otpData.data.url;
 
-const {
-    contract_type,
-    amount
-} = req.body;
+    // 3. Conectar ao WebSocket e executar o fluxo completo (Proposal -> Buy -> Monitorar)
+    const tradeResult = await new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
 
+      // Timeout de segurança (55s) para não travar a Vercel
+      const timeout = setTimeout(() => {
+        ws.close();
+        reject(new Error('Timeout: A ordem demorou mais que o limite do servidor.'));
+      }, 55000);
 
+      ws.on('open', () => {
+        // PASSO A: Pedir a cotação (Proposal). O 'symbol' entra AQUI.
+        ws.send(JSON.stringify({
+          proposal: 1,
+          amount: Number(amount),
+          basis: "stake",
+          contract_type: contract_type.toUpperCase(),
+          currency: "USD",
+          duration: Number(duration),
+          duration_unit: duration_unit,
+          symbol: symbol.toUpperCase(),
+          req_id: 1
+        }));
+      });
 
-const appId = process.env.DERIV_APP_ID;
-const token = process.env.DERIV_TOKEN;
+      ws.on('message', (data) => {
+        const response = JSON.parse(data);
 
+        // Se a Deriv retornar qualquer erro no WS, aborta e avisa o front
+        if (response.error) {
+          clearTimeout(timeout);
+          ws.close();
+          return reject(new Error(response.error.message));
+        }
 
+        // PASSO B: Recebeu a cotação -> Executa a compra usando apenas o ID
+        if (response.msg_type === 'proposal') {
+          ws.send(JSON.stringify({
+            buy: response.proposal.id,       // Usa o ID da cotação. ZERO symbol aqui!
+            price: response.proposal.ask_price, 
+            req_id: 2
+          }));
+        }
 
-console.log("ORDER DEBUG",{
-    appId,
-    tokenLength: token ? token.length : 0,
-    contract_type,
-    amount
-});
+        // PASSO C: Compra confirmada -> Assinar monitoramento
+        if (response.msg_type === 'buy') {
+          ws.send(JSON.stringify({
+            proposal_open_contract: 1,
+            contract_id: response.buy.contract_id,
+            subscribe: 1,
+            req_id: 3
+          }));
+        }
 
+        // PASSO D: Monitorar a vela (WIN/LOSS)
+        if (response.msg_type === 'proposal_open_contract') {
+          const contract = response.proposal_open_contract;
+          
+          if (contract.is_sold === 1) { // Contrato encerrou
+            clearTimeout(timeout);
+            ws.close();
+            
+            const profit = parseFloat(contract.profit);
+            
+            resolve({
+              contract_id: contract.contract_id,
+              buy_price: contract.buy_price,
+              sell_price: contract.sell_price,
+              profit: profit,
+              status: profit > 0 ? 'WIN' : 'LOSS',
+              is_sold: true
+            });
+          }
+        }
+      });
 
-
-if(!appId || !token){
-
-    return res.status(500).json({
-
-        error:"Credenciais Deriv ausentes"
-
+      ws.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
     });
 
-}
-
-
-
-try{
-
-
-// ===============================
-// 1 - GERAR OTP
-// ===============================
-
-
-const otpResponse = await fetch(
-
-"https://api.derivws.com/trading/v1/options/accounts/DOT93838295/otp",
-
-{
-
-method:"POST",
-
-headers:{
-
-"Deriv-App-ID":appId,
-
-"Authorization":`Bearer ${token}`,
-
-"Content-Type":"application/json"
-
-}
-
-}
-
-);
-
-
-
-const otpData = await otpResponse.json();
-
-
-
-console.log("OTP RESPONSE",otpData);
-
-
-
-if(!otpData.data || !otpData.data.url){
-
-    throw new Error(
-        "Falha ao gerar OTP Deriv"
-    );
-
-}
-
-
-
-const wsUrl = otpData.data.url;
-
-
-
-// ===============================
-// 2 - CONECTAR WEBSOCKET OTP
-// ===============================
-
-
-const ws = new WebSocket(wsUrl);
-
-
-
-const result = await new Promise((resolve,reject)=>{
-
-
-
-const timeout=setTimeout(()=>{
-
-
-reject(
-new Error("Timeout WebSocket compra")
-);
-
-
-},20000);
-
-
-
-ws.on("open",()=>{
-
-
-console.log(
-"WebSocket OTP conectado"
-);
-
-
-
-ws.send(JSON.stringify({
-
-proposal:1,
-
-amount:Number(amount),
-
-basis:"stake",
-
-contract_type:contract_type,
-
-currency:"USD",
-
-duration:5,
-
-duration_unit:"m",
-
-symbol:"1HZ100V"
-
-}));
-
-
-});
-
-ws.on("message",(msg)=>{
-
-
-const data =
-JSON.parse(msg.toString());
-
-
-
-console.log(
-JSON.stringify(data, null, 2)
-);
-
-
-if(data.error){
-
-
-clearTimeout(timeout);
-
-
-reject(
-new Error(
-data.error.message
-)
-);
-
-
-return;
-
-}
-
-
-
-
-// recebeu proposta
-
-if(data.proposal){
-
-
-console.log(
-"PROPOSAL RECEBIDA",
-data.proposal.id
-);
-
-
-
-ws.send(JSON.stringify({
-
-
-buy:data.proposal.id,
-
-
-price:Number(amount)
-
-
-}));
-
-
-}
-
-
-
-
-// compra executada
-
-if(data.buy){
-
-
-
-clearTimeout(timeout);
-
-
-
-resolve(data.buy);
-
-
-
-ws.close();
-
-
-
-}
-
-
-
-});
-
-
-
-
-ws.on("error",(err)=>{
-
-
-clearTimeout(timeout);
-
-
-reject(err);
-
-
-});
-
-
-
-});
-
-
-
-
-return res.status(200).json({
-
-
-status:"Contrato comprado",
-
-
-contract:result
-
-
-
-});
-
-
-
-
-}catch(error){
-
-
-console.log(
-"ORDER ERROR",
-error
-);
-
-
-
-return res.status(400).json({
-
-status:"Erro ordem",
-
-message:error.message
-
-});
-
-
-}
-
-
+    // Envia o WIN/LOSS para o seu app.js / frontend
+    return res.status(200).json({ success: true, data: tradeResult });
+
+  } catch (error) {
+    // Mantém o mesmo formato de erro que o seu frontend já espera
+    return res.status(400).json({ status: 'Erro ordem', message: error.message });
+  }
 }
