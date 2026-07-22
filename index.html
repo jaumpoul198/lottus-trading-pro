@@ -1,51 +1,46 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Lottus Trading Pro V2 - Sinais para próxima vela">
-  <meta name="theme-color" content="#0a0a0f">
-  <title>Lottus Trading Pro V2 | Entrada na Próxima Vela</title>
-
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-
-  <link rel="stylesheet" href="assets/css/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Lottus Trading Pro V2 - Sinais para próxima vela com dados da Deriv" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <title>Lottus Trading Pro V2 | Deriv · Próxima Vela</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
   <div class="lt-container">
-    <!-- Header -->
     <header class="lt-header">
       <div class="lt-logo">
         <div class="lt-logo-icon">⚡</div>
         <div>
           <div class="lt-logo-text">Lottus Trading <span class="lt-pro-badge">PRO V2</span></div>
-          <div class="lt-logo-sub">Entrada na próxima vela · Mercado Aberto · OTC <span class="lt-ai-badge">🧠 IA</span></div>
+          <div class="lt-logo-sub">Deriv · Entrada na próxima vela <span class="lt-ai-badge">🧠 IA</span></div>
         </div>
       </div>
       <nav class="lt-nav">
         <button class="lt-nav-btn active" data-view="signals">Sinais</button>
         <button class="lt-nav-btn" data-view="config">Config</button>
         <button class="lt-nav-btn" data-view="history">Histórico</button>
-        <button class="lt-nav-btn primary" id="btnConnect">Conectar</button>
       </nav>
     </header>
 
-    <!-- Connection Status Bar -->
     <div class="lt-status-bar" id="statusBar">
       <div class="lt-status-item">
-        <span class="lt-status-dot" id="statusDot"></span>
-        <span class="lt-status-text" id="statusText">Desconectado</span>
+        <span class="lt-status-dot connected" id="statusDot"></span>
+        <span class="lt-status-text" id="statusText">Deriv Conectado</span>
       </div>
       <div class="lt-status-item">
         <span class="lt-status-label">Corretora:</span>
-        <span class="lt-status-value" id="brokerName">Nenhuma</span>
+        <span class="lt-status-value" id="brokerName">Deriv</span>
       </div>
       <div class="lt-status-item">
-        <span class="lt-status-label">Timeframe:</span>
-        <span class="lt-status-value" id="currentTimeframe">M5</span>
+        <span class="lt-status-label">Símbolo:</span>
+        <span class="lt-status-value mono" id="currentSymbol">1HZ100V</span>
       </div>
       <div class="lt-status-item">
         <span class="lt-status-label">Vela atual:</span>
@@ -56,28 +51,28 @@
         <span class="lt-status-value mono countdown" id="nextCandleCountdown">—</span>
       </div>
       <div class="lt-status-item">
+        <span class="lt-status-label">Valor atual:</span>
+        <span class="lt-status-value" id="currentTradeAmount">$1.00</span>
+      </div>
+      <div class="lt-status-item">
         <span class="lt-status-label">Latência:</span>
         <span class="lt-status-value" id="latency">—</span>
       </div>
     </div>
 
-    <!-- VIEW: Signals -->
     <main class="lt-main" id="viewSignals">
-      <!-- Hero -->
       <section class="lt-hero">
         <div class="lt-hero-label">
           <span class="pulse"></span>
-          Entrada na próxima vela
+          Entrada na próxima vela · Dados ao vivo da Deriv
         </div>
         <h1>Sinais para a <span>próxima vela</span></h1>
         <p>Análise técnica da vela atual + previsão para a próxima. Timer regressivo mostra exatamente quando entrar.</p>
-        <div class="lt-hero-btns">
-          <button class="lt-btn lt-btn-main" id="btnConnectHero">Conectar Corretora</button>
-          <button class="lt-btn lt-btn-ghost" id="btnSimulate">Modo Simulação</button>
+        <div class="lt-hero-btns" style="justify-content:center; gap:12px;">
+          <span class="lt-badge-success" style="padding:10px 20px; border-radius:8px; background:var(--accent-green); color:#fff; font-weight:600;">✅ Conectado à Deriv</span>
         </div>
       </section>
 
-      <!-- Signal Filters -->
       <section class="lt-section">
         <div class="lt-filters">
           <div class="lt-filter-group">
@@ -92,6 +87,7 @@
             <label class="lt-filter-label">Ativo</label>
             <select class="lt-filter-select" id="filterAsset">
               <option value="all">Todos os ativos</option>
+              <option value="1HZ100V" selected>1HZ100V (Deriv)</option>
               <option value="EURUSD">EUR/USD</option>
               <option value="GBPUSD">GBP/USD</option>
               <option value="USDJPY">USD/JPY</option>
@@ -118,18 +114,17 @@
           </div>
           <div class="lt-filter-group">
             <label class="lt-filter-label">Score mínimo</label>
-            <input type="range" class="lt-filter-range" id="filterScore" min="50" max="95" value="65">
+            <input type="range" class="lt-filter-range" id="filterScore" min="50" max="95" value="65" />
             <span class="lt-filter-range-value" id="filterScoreValue">65</span>
           </div>
         </div>
       </section>
 
-      <!-- Active Signal Banner (destaque para o sinal atual) -->
       <section class="lt-section" id="activeSignalSection" style="display:none;">
         <div class="lt-active-signal" id="activeSignalBanner">
           <div class="lt-active-signal-content">
             <div class="lt-active-signal-label">🎯 SINAL ATIVO PARA PRÓXIMA VELA</div>
-            <div class="lt-active-signal-pair" id="activePair">EUR/USD</div>
+            <div class="lt-active-signal-pair" id="activePair">1HZ100V</div>
             <div class="lt-active-signal-direction" id="activeDirection">CALL</div>
             <div class="lt-active-signal-timer">
               <span>Entrar em:</span>
@@ -142,29 +137,27 @@
             </div>
             <div class="lt-active-signal-reasons" id="activeReasons"></div>
           </div>
-          <div class="lt-active-signal-actions">
+          <div class="lt-active-signal-actions" style="display:none;">
             <button class="lt-btn lt-btn-main" id="btnConfirmEntry">✅ Confirmar Entrada</button>
             <button class="lt-btn lt-btn-ghost" id="btnIgnoreSignal">❌ Ignorar</button>
           </div>
         </div>
       </section>
 
-      <!-- Live Signals -->
       <section class="lt-section">
         <div class="lt-section-header">
           <div>
             <div class="lt-section-title">Sinais para próxima vela</div>
-            <div class="lt-section-subtitle" id="signalsSubtitle">Aguardando conexão...</div>
+            <div class="lt-section-subtitle" id="signalsSubtitle">📊 Dados em tempo real da Deriv (1HZ100V)</div>
           </div>
           <div class="lt-live-badge">
             <span class="pulse"></span>
-            <span id="liveStatus">offline</span>
+            <span id="liveStatus">ao vivo</span>
           </div>
         </div>
         <div class="lt-signals-grid" id="signalsGrid"></div>
       </section>
 
-      <!-- Candle Timeline -->
       <section class="lt-section">
         <div class="lt-section-header">
           <div class="lt-section-title">Timeline de velas</div>
@@ -176,19 +169,13 @@
         </div>
         <div class="lt-timeline" id="candleTimeline">
           <div class="lt-timeline-item current">
-            <div class="lt-timeline-candle">
-              <div class="lt-timeline-wick"></div>
-              <div class="lt-timeline-body" style="height:60%;"></div>
-            </div>
+            <div class="lt-timeline-candle"><div class="lt-timeline-wick"></div><div class="lt-timeline-body" style="height:60%;"></div></div>
             <div class="lt-timeline-label">Vela atual</div>
             <div class="lt-timeline-time" id="timelineCurrent">—</div>
           </div>
           <div class="lt-timeline-arrow">→</div>
           <div class="lt-timeline-item next">
-            <div class="lt-timeline-candle">
-              <div class="lt-timeline-wick"></div>
-              <div class="lt-timeline-body" style="height:40%;"></div>
-            </div>
+            <div class="lt-timeline-candle"><div class="lt-timeline-wick"></div><div class="lt-timeline-body" style="height:40%;"></div></div>
             <div class="lt-timeline-label">Próxima vela</div>
             <div class="lt-timeline-time" id="timelineNext">—</div>
             <div class="lt-timeline-countdown" id="timelineCountdown">00:00</div>
@@ -202,7 +189,6 @@
         </div>
       </section>
 
-      <!-- Technical Analysis Preview -->
       <section class="lt-section">
         <div class="lt-section-header">
           <div class="lt-section-title">Análise da vela atual</div>
@@ -213,121 +199,58 @@
         </div>
         <div class="lt-chart-container" id="chartContainer">
           <canvas id="priceChart" width="1200" height="400"></canvas>
-          <div class="lt-chart-overlay" id="chartOverlay">
-            <div class="lt-chart-placeholder">
-              <div class="lt-chart-placeholder-icon">📊</div>
-              <p>Conecte uma corretora para visualizar o gráfico em tempo real</p>
-              <button class="lt-btn lt-btn-main" id="btnConnectChart">Conectar agora</button>
-            </div>
-          </div>
+          <div class="lt-chart-overlay" id="chartOverlay" style="display:none;"></div>
         </div>
       </section>
 
-      <!-- Platform Stats -->
       <section class="lt-section">
-        <div class="lt-section-header">
-          <div class="lt-section-title">Performance dos robôs</div>
-        </div>
+        <div class="lt-section-header"><div class="lt-section-title">Performance dos robôs</div></div>
         <div class="lt-stats-bar" id="statsBar">
-          <div class="lt-stat-item">
-            <div class="lt-stat-item-label">Sinais hoje</div>
-            <div class="lt-stat-item-value lt-count-up" data-target="0">0</div>
-            <div class="lt-stat-item-sublabel">análises geradas</div>
-          </div>
-          <div class="lt-stat-item">
-            <div class="lt-stat-item-label">Taxa de acerto</div>
-            <div class="lt-stat-item-value lt-count-up" data-target="0">0%</div>
-            <div class="lt-stat-item-sublabel">na próxima vela</div>
-          </div>
-          <div class="lt-stat-item">
-            <div class="lt-stat-item-label">Lucro potencial</div>
-            <div class="lt-stat-item-value lt-count-up" data-target="0">0%</div>
-            <div class="lt-stat-item-sublabel">retorno médio</div>
-          </div>
-          <div class="lt-stat-item">
-            <div class="lt-stat-item-label">Robôs ativos</div>
-            <div class="lt-stat-item-value lt-count-up" data-target="6">0</div>
-            <div class="lt-stat-item-sublabel">estratégias rodando</div>
-          </div>
+          <div class="lt-stat-item"><div class="lt-stat-item-label">Sinais hoje</div><div class="lt-stat-item-value lt-count-up" data-target="0">0</div><div class="lt-stat-item-sublabel">análises geradas</div></div>
+          <div class="lt-stat-item"><div class="lt-stat-item-label">Taxa de acerto</div><div class="lt-stat-item-value lt-count-up" data-target="0">0%</div><div class="lt-stat-item-sublabel">na próxima vela</div></div>
+          <div class="lt-stat-item"><div class="lt-stat-item-label">Lucro potencial</div><div class="lt-stat-item-value lt-count-up" data-target="0">0%</div><div class="lt-stat-item-sublabel">retorno médio</div></div>
+          <div class="lt-stat-item"><div class="lt-stat-item-label">Robôs ativos</div><div class="lt-stat-item-value lt-count-up" data-target="6">0</div><div class="lt-stat-item-sublabel">estratégias rodando</div></div>
         </div>
       </section>
 
-      <!-- Bots Grid -->
       <section class="lt-section">
-        <div class="lt-section-header">
-          <div class="lt-section-title">Nossos robôs</div>
-        </div>
+        <div class="lt-section-header"><div class="lt-section-title">Nossos robôs</div></div>
         <div class="lt-bots-grid" id="botsGrid"></div>
       </section>
     </main>
 
-    <!-- VIEW: Config -->
     <main class="lt-main hidden" id="viewConfig">
       <section class="lt-section lt-config-section">
         <h2 class="lt-config-title">⚙️ Configurações</h2>
-
         <div class="lt-config-card">
           <div class="lt-config-header">
             <div class="lt-config-icon">🏦</div>
             <div>
-              <h3>Conexão com Corretora</h3>
-              <p>Configure sua corretora para receber dados em tempo real</p>
+              <h3>Conexão com Deriv</h3>
+              <p>Integração ativa com a API da Deriv – símbolo 1HZ100V</p>
             </div>
           </div>
-
           <div class="lt-config-form">
             <div class="lt-form-group">
-              <label>Corretora</label>
-              <select class="lt-form-select" id="configBroker">
-                <option value="">Selecione...</option>
-                <option value="iqoption">IQ Option</option>
-                <option value="quotex">Quotex</option>
-                <option value="pocketoption">Pocket Option</option>
-                <option value="deriv">Deriv</option>
-                <option value="binomo">Binomo</option>
-                <option value="olymptrade">Olymp Trade</option>
-                <option value="custom">API Personalizada</option>
+              <label>Status</label>
+              <div style="background:var(--accent-green);color:#fff;padding:8px 16px;border-radius:6px;display:inline-block;font-weight:600;">✅ Conectado</div>
+            </div>
+            <div class="lt-form-group" style="margin-top:8px;">
+              <label>App ID</label>
+              <input type="text" class="lt-form-input" id="configAppId" value="33TsH8mBXpHRvKjKlvf30" disabled />
+            </div>
+            <div class="lt-form-group">
+              <label>Token (oculto)</label>
+              <input type="password" class="lt-form-input" value="pat_b9b51e8cd5..." disabled />
+            </div>
+            <!-- 🆕 SELETOR DE CONTA DEMO/REAL (adicionado) -->
+            <div class="lt-form-group">
+              <label>Tipo de conta</label>
+              <select class="lt-form-select" id="configAccountType">
+                <option value="demo" selected>Conta Demo</option>
+                <option value="real">Conta Real</option>
               </select>
-            </div>
-
-            <div class="lt-form-group" id="customBrokerGroup" style="display:none;">
-              <label>URL da API</label>
-              <input type="url" class="lt-form-input" id="customBrokerUrl" placeholder="https://api.corretora.com/v1">
-            </div>
-
-            <div class="lt-form-row">
-              <div class="lt-form-group">
-                <label>API Key</label>
-                <input type="password" class="lt-form-input" id="configApiKey" placeholder="Sua chave de API">
-              </div>
-              <div class="lt-form-group">
-                <label>API Secret</label>
-                <input type="password" class="lt-form-input" id="configApiSecret" placeholder="Sua chave secreta">
-              </div>
-            </div>
-
-            <div class="lt-form-row">
-              <div class="lt-form-group">
-                <label>Tipo de conta</label>
-                <select class="lt-form-select" id="configAccountType">
-                  <option value="demo">Conta Demo</option>
-                  <option value="real">Conta Real</option>
-                </select>
-              </div>
-              <div class="lt-form-group">
-                <label>Paridade padrão</label>
-                <select class="lt-form-select" id="configDefaultPair">
-                  <option value="EURUSD">EUR/USD</option>
-                  <option value="GBPUSD">GBP/USD</option>
-                  <option value="USDJPY">USD/JPY</option>
-                  <option value="AUDUSD">AUD/USD</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="lt-form-actions">
-              <button class="lt-btn lt-btn-main" id="btnSaveConfig">Salvar e Conectar</button>
-              <button class="lt-btn lt-btn-ghost" id="btnTestConnection">Testar Conexão</button>
+              <small style="color:var(--text-muted);font-size:11px;">⚠️ Trocar para Real exige saldo e token com permissão trade</small>
             </div>
           </div>
         </div>
@@ -340,7 +263,6 @@
               <p>Ajuste quando os sinais são gerados</p>
             </div>
           </div>
-
           <div class="lt-form-group">
             <label>Gerar sinal a cada</label>
             <select class="lt-form-select" id="configSignalTiming">
@@ -349,21 +271,46 @@
               <option value="late">Final da vela (últimos 30s)</option>
             </select>
           </div>
-
           <div class="lt-form-group">
             <label class="lt-toggle-label">
-              <input type="checkbox" class="lt-toggle" id="configAutoConfirm" checked>
+              <input type="checkbox" class="lt-toggle" id="configAutoConfirm" checked />
               <span class="lt-toggle-slider"></span>
-              Auto-confirmar entrada quando score > 80
+              Auto‑executar ordem (sem perguntar)
             </label>
           </div>
-
           <div class="lt-form-group">
             <label class="lt-toggle-label">
-              <input type="checkbox" class="lt-toggle" id="configShowCountdown" checked>
+              <input type="checkbox" class="lt-toggle" id="configShowCountdown" checked />
               <span class="lt-toggle-slider"></span>
               Mostrar contagem regressiva na tela
             </label>
+          </div>
+        </div>
+
+        <!-- Gestão de Capital -->
+        <div class="lt-config-card">
+          <div class="lt-config-header">
+            <div class="lt-config-icon">💰</div>
+            <div>
+              <h3>Gestão de Capital</h3>
+              <p>Configure o valor das entradas e Martingale</p>
+            </div>
+          </div>
+          <div class="lt-form-group">
+            <label>Valor base da entrada (USD)</label>
+            <input type="number" class="lt-form-input" id="configTradeAmount" value="1" min="0.5" step="0.5" />
+          </div>
+          <div class="lt-form-group">
+            <label class="lt-toggle-label">
+              <input type="checkbox" class="lt-toggle" id="configMartingale" />
+              <span class="lt-toggle-slider"></span>
+              Ativar Martingale (dobra na perda, volta ao base no win)
+            </label>
+          </div>
+          <div class="lt-form-group">
+            <label>Limite máximo de dobras</label>
+            <input type="number" class="lt-form-input" id="configMaxMartingale" value="5" min="1" max="10" step="1" />
+            <small style="color:var(--text-muted);font-size:11px;">Número máximo de dobras consecutivas (segurança)</small>
           </div>
         </div>
 
@@ -387,14 +334,14 @@
           </div>
           <div class="lt-form-group">
             <label class="lt-toggle-label">
-              <input type="checkbox" class="lt-toggle" id="notifBrowser" checked>
+              <input type="checkbox" class="lt-toggle" id="notifBrowser" checked />
               <span class="lt-toggle-slider"></span>
               Notificações no navegador
             </label>
           </div>
           <div class="lt-form-group">
             <label class="lt-toggle-label">
-              <input type="checkbox" class="lt-toggle" id="notifSound" checked>
+              <input type="checkbox" class="lt-toggle" id="notifSound" checked />
               <span class="lt-toggle-slider"></span>
               Som de alerta
             </label>
@@ -403,7 +350,6 @@
       </section>
     </main>
 
-    <!-- VIEW: History -->
     <main class="lt-main hidden" id="viewHistory">
       <section class="lt-section">
         <div class="lt-section-header">
@@ -416,20 +362,10 @@
             <button class="lt-btn lt-btn-ghost" id="btnClearHistory">🗑️ Limpar</button>
           </div>
         </div>
-
         <div class="lt-history-table-container">
           <table class="lt-history-table" id="historyTable">
             <thead>
-              <tr>
-                <th>Horário do Sinal</th>
-                <th>Entrada</th>
-                <th>Vela Alvo</th>
-                <th>Ativo</th>
-                <th>Direção</th>
-                <th>Score</th>
-                <th>Resultado</th>
-                <th>Lucro</th>
-              </tr>
+              <tr><th>Horário do Sinal</th><th>Entrada</th><th>Vela Alvo</th><th>Ativo</th><th>Direção</th><th>Score</th><th>Resultado</th><th>Lucro</th></tr>
             </thead>
             <tbody id="historyTableBody">
               <tr class="lt-history-empty">
@@ -437,7 +373,7 @@
                   <div class="lt-empty-state">
                     <div class="lt-empty-icon">📋</div>
                     <p>Nenhum sinal no histórico</p>
-                    <p class="lt-empty-sub">Conecte uma corretora para começar</p>
+                    <p class="lt-empty-sub">Aguardando sinais da Deriv...</p>
                   </div>
                 </td>
               </tr>
@@ -445,10 +381,6 @@
           </table>
         </div>
       </section>
-    </main>
-
-
-      <!-- AI Learning Dashboard -->
       <section class="lt-section">
         <div class="lt-section-header">
           <div>
@@ -458,44 +390,26 @@
           <button class="lt-btn lt-btn-ghost" id="btnClearAIMemory" style="font-size:12px;padding:8px 16px;">🗑️ Limpar Memória</button>
         </div>
         <div class="lt-ai-dashboard" id="aiDashboard">
-          <div class="lt-ai-card">
-            <div class="lt-ai-icon">🧠</div>
-            <div class="lt-ai-value" id="aiPatterns">0</div>
-            <div class="lt-ai-label">Padrões na memória</div>
-          </div>
-          <div class="lt-ai-card">
-            <div class="lt-ai-icon">📈</div>
-            <div class="lt-ai-value" id="aiAccuracy">0%</div>
-            <div class="lt-ai-label">Taxa de aprendizado</div>
-          </div>
-          <div class="lt-ai-card">
-            <div class="lt-ai-icon">⚖️</div>
-            <div class="lt-ai-value" id="aiTopIndicator">—</div>
-            <div class="lt-ai-label">Indicador mais confiável</div>
-          </div>
-          <div class="lt-ai-card">
-            <div class="lt-ai-icon">🎯</div>
-            <div class="lt-ai-value" id="aiBoosts">0</div>
-            <div class="lt-ai-label">Boosts aplicados hoje</div>
-          </div>
+          <div class="lt-ai-card"><div class="lt-ai-icon">🧠</div><div class="lt-ai-value" id="aiPatterns">0</div><div class="lt-ai-label">Padrões na memória</div></div>
+          <div class="lt-ai-card"><div class="lt-ai-icon">📈</div><div class="lt-ai-value" id="aiAccuracy">0%</div><div class="lt-ai-label">Taxa de aprendizado</div></div>
+          <div class="lt-ai-card"><div class="lt-ai-icon">⚖️</div><div class="lt-ai-value" id="aiTopIndicator">—</div><div class="lt-ai-label">Indicador mais confiável</div></div>
+          <div class="lt-ai-card"><div class="lt-ai-icon">🎯</div><div class="lt-ai-value" id="aiBoosts">0</div><div class="lt-ai-label">Boosts aplicados hoje</div></div>
         </div>
         <div class="lt-ai-weights" id="aiWeights">
           <div class="lt-ai-weights-title">Pesos dos indicadores (ajustados pela IA)</div>
           <div class="lt-ai-weights-grid" id="aiWeightsGrid"></div>
         </div>
       </section>
+    </main>
 
-    <!-- Footer -->
     <footer class="lt-footer">
-      <p>© 2026 Lottus Trading Pro V2. Todos os direitos reservados.</p>
-      <p class="lt-footer-disclaimer">
-        Os sinais indicam a direção para a PRÓXIMA VELA. Analise o mercado antes de entrar.
-        Trading envolve riscos. Nunca invista mais do que pode perder.
-      </p>
+      <p>© 2026 Lottus Trading Pro V2 · Integrado com Deriv</p>
+      <p class="lt-footer-disclaimer">Os sinais indicam a direção para a PRÓXIMA VELA. Trading envolve riscos. Nunca invista mais do que pode perder.</p>
     </footer>
   </div>
 
-  <script src="assets/js/ai-engine.js"></script>
   <script src="assets/js/app.js"></script>
+  <script src="assets/js/ai-engine.js"></script>
+  <script src="assets/js/deriv-integration.js"></script>
 </body>
 </html>

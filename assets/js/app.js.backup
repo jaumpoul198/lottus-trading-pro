@@ -2,10 +2,7 @@
  * LOTTUS TRADING PRO V2 - Application Logic
  * ==========================================
  * Sinais para PRÓXIMA VELA com timer regressivo
- * Integrado com dados da Deriv (1HZ100V)
- * EXECUÇÃO AUTOMÁTICA - MARTINGALE - CONTROLE DE ORDEM ÚNICA
- * SUPORTE A ALTERNÂNCIA DEMO/REAL VIA INTERFACE
- * CORREÇÕES: formatTime ultra-robusta, fallback para timestamp
+ * Mercado Aberto + OTC
  */
 
 (function() {
@@ -15,12 +12,13 @@
   // CONFIGURAÇÃO
   // ============================================
   const CONFIG = {
-    signalInterval: 5000,
-    maxSignals: 10,
-    maxHistory: 100,
+    signalInterval: 5000,       // ms entre análises
+    priceUpdateInterval: 1000,  // ms entre atualizações de preço
+    maxSignals: 10,             // máximo de sinais visíveis
+    maxHistory: 100,            // máximo no histórico
     simulationMode: false,
-    candleDuration: 5,
-    signalTiming: 'early',
+    candleDuration: 5,          // minutos (M5 padrão)
+    signalTiming: 'early',      // 'early' | 'mid' | 'late'
     autoConfirm: true,
     showCountdown: true,
   };
@@ -31,7 +29,7 @@
   const state = {
     connected: false,
     connecting: false,
-    broker: 'Deriv',
+    broker: null,
     market: 'all',
     currentPrices: {},
     priceHistory: {},
@@ -41,23 +39,14 @@
     history: [],
     activeBots: new Set(['Lottus Core', 'Pulse Scan', 'Atlas Flow', 'Vector Prime', 'Signal Orbit', 'Nexus Grid']),
     settings: { minScore: 65, timeframe: 'M5', indicators: 'all' },
-    currentSignal: null,
-    candleStartTime: null,
-    nextCandleTime: null,
+    currentSignal: null,        // sinal ativo para próxima vela
+    candleStartTime: null,      // início da vela atual
+    nextCandleTime: null,       // início da próxima vela
     timerInterval: null,
-    tradeSettings: {
-      baseAmount: 1,
-      currentAmount: 1,
-      martingaleActive: false,
-      maxMartingale: 5,
-      consecutiveLosses: 0,
-    },
-    orderInProgress: false,
-    lastTradeResult: null,
   };
 
   // ============================================
-  // DADOS (apenas Deriv – 1HZ100V)
+  // DADOS
   // ============================================
   const BOTS = [
     { name: 'Lottus Core', icon: '🧠', color: '#00d4ff', desc: 'RSI + MACD + EMA200. Confirmação tripla.', accuracy: 74, signals: 0, indicators: ['rsi', 'macd', 'ema'], weight: 1.0 },
@@ -70,9 +59,27 @@
 
   const ASSETS = {
     open: [
-      { pair: '1HZ100V', code: '1HZ100V', basePrice: 10000, volatility: 0.5, type: 'open' },
+      { pair: 'EUR/USD', code: 'EURUSD', basePrice: 1.0850, volatility: 0.0003, type: 'open' },
+      { pair: 'GBP/USD', code: 'GBPUSD', basePrice: 1.2650, volatility: 0.0004, type: 'open' },
+      { pair: 'USD/JPY', code: 'USDJPY', basePrice: 151.20, volatility: 0.05, type: 'open' },
+      { pair: 'AUD/USD', code: 'AUDUSD', basePrice: 0.6520, volatility: 0.0003, type: 'open' },
+      { pair: 'EUR/JPY', code: 'EURJPY', basePrice: 164.10, volatility: 0.06, type: 'open' },
+      { pair: 'GBP/JPY', code: 'GBPJPY', basePrice: 191.30, volatility: 0.07, type: 'open' },
+      { pair: 'USD/CAD', code: 'USDCAD', basePrice: 1.3680, volatility: 0.0004, type: 'open' },
+      { pair: 'USD/CHF', code: 'USDCHF', basePrice: 0.9040, volatility: 0.0003, type: 'open' },
+      { pair: 'NZD/USD', code: 'NZDUSD', basePrice: 0.5920, volatility: 0.0003, type: 'open' },
+      { pair: 'EUR/GBP', code: 'EURGBP', basePrice: 0.8570, volatility: 0.0002, type: 'open' },
     ],
-    otc: []
+    otc: [
+      { pair: 'EUR/USD (OTC)', code: 'EURUSD_OTC', basePrice: 1.0845, volatility: 0.0005, type: 'otc' },
+      { pair: 'GBP/USD (OTC)', code: 'GBPUSD_OTC', basePrice: 1.2645, volatility: 0.0006, type: 'otc' },
+      { pair: 'USD/JPY (OTC)', code: 'USDJPY_OTC', basePrice: 151.15, volatility: 0.08, type: 'otc' },
+      { pair: 'AUD/USD (OTC)', code: 'AUDUSD_OTC', basePrice: 0.6515, volatility: 0.0005, type: 'otc' },
+      { pair: 'EUR/JPY (OTC)', code: 'EURJPY_OTC', basePrice: 164.05, volatility: 0.09, type: 'otc' },
+      { pair: 'GBP/JPY (OTC)', code: 'GBPJPY_OTC', basePrice: 191.25, volatility: 0.10, type: 'otc' },
+      { pair: 'USD/CAD (OTC)', code: 'USDCAD_OTC', basePrice: 1.3675, volatility: 0.0006, type: 'otc' },
+      { pair: 'USD/CHF (OTC)', code: 'USDCHF_OTC', basePrice: 0.9035, volatility: 0.0005, type: 'otc' },
+    ]
   };
 
   // ============================================
@@ -82,24 +89,8 @@
   function getRandomFloat(min, max) { return Math.random() * (max - min) + min; }
   function formatNumber(num) { return num.toLocaleString('pt-BR'); }
   function formatPrice(price, decimals = 5) { return price.toFixed(decimals); }
-
-  // 🔧 CORREÇÃO: formatTime ultra-robusta – aceita Date, string, número ou null
-  function formatTime(date) {
-    if (date == null) return '—';
-    let d;
-    if (date instanceof Date) {
-      d = date;
-    } else if (typeof date === 'string' || typeof date === 'number') {
-      d = new Date(date);
-    } else {
-      return '—';
-    }
-    if (isNaN(d.getTime())) return '—';
-    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  }
-
+  function formatTime(date) { return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
   function formatDuration(ms) {
-    if (isNaN(ms) || ms < 0) return '00:00';
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -133,6 +124,7 @@
     const msSinceStart = now - times.current;
     const progress = (msSinceStart / times.duration) * 100;
 
+    // Atualiza UI do timer
     const countdownEl = document.getElementById('nextCandleCountdown');
     const timelineCountdown = document.getElementById('timelineCountdown');
     const currentCandleTime = document.getElementById('currentCandleTime');
@@ -146,25 +138,81 @@
     if (timelineCurrent) timelineCurrent.textContent = formatTime(times.current);
     if (timelineNext) timelineNext.textContent = formatTime(times.next);
 
+    // Timer no banner ativo
     if (entryTimer) {
       entryTimer.textContent = formatDuration(msToNext);
       if (msToNext < 30000) entryTimer.classList.add('urgent');
       else entryTimer.classList.remove('urgent');
     }
 
+    // Gera sinal no momento configurado
     const signalThreshold = CONFIG.signalTiming === 'early' ? 0.1 :
                            CONFIG.signalTiming === 'mid' ? 0.5 : 0.85;
     const shouldGenerate = progress >= (signalThreshold * 100) && progress < (signalThreshold * 100 + 5);
 
-    if (shouldGenerate && !state.currentSignal && !state.orderInProgress) {
+    if (shouldGenerate && !state.currentSignal) {
       generateNextCandleSignal();
     }
 
+    // Limpa sinal quando vela fecha
     if (msToNext < 2000 && state.currentSignal) {
       resolveSignal();
     }
 
     return { msToNext, progress };
+  }
+
+  // ============================================
+  // SIMULAÇÃO DE PREÇOS
+  // ============================================
+  function initPriceSimulation() {
+    const allAssets = [...ASSETS.open, ...ASSETS.otc];
+    allAssets.forEach(asset => {
+      state.priceHistory[asset.code] = generateCandleHistory(asset);
+      state.currentPrices[asset.code] = asset.basePrice;
+    });
+
+    setInterval(() => {
+      allAssets.forEach(asset => {
+        const change = getRandomFloat(-asset.volatility, asset.volatility);
+        state.currentPrices[asset.code] = Math.max(
+          state.currentPrices[asset.code] + change,
+          asset.basePrice * 0.5
+        );
+
+        const history = state.priceHistory[asset.code];
+        const currentCandle = history[history.length - 1];
+        currentCandle.close = state.currentPrices[asset.code];
+        if (state.currentPrices[asset.code] > currentCandle.high) currentCandle.high = state.currentPrices[asset.code];
+        if (state.currentPrices[asset.code] < currentCandle.low) currentCandle.low = state.currentPrices[asset.code];
+
+        if (Math.random() < 0.15) {
+          currentCandle.close = state.currentPrices[asset.code];
+          history.push({
+            open: currentCandle.close, high: currentCandle.close,
+            low: currentCandle.close, close: currentCandle.close,
+            volume: getRandomInt(100, 1000)
+          });
+          if (history.length > 100) history.shift();
+        }
+      });
+      updateStatusBar();
+    }, CONFIG.priceUpdateInterval);
+  }
+
+  function generateCandleHistory(asset, count = 50) {
+    const candles = [];
+    let price = asset.basePrice;
+    for (let i = 0; i < count; i++) {
+      const open = price;
+      const change = getRandomFloat(-asset.volatility * 3, asset.volatility * 3);
+      const close = open + change;
+      const high = Math.max(open, close) + getRandomFloat(0, asset.volatility);
+      const low = Math.min(open, close) - getRandomFloat(0, asset.volatility);
+      candles.push({ open, high, low, close, volume: getRandomInt(100, 1000) });
+      price = close;
+    }
+    return candles;
   }
 
   // ============================================
@@ -246,40 +294,13 @@
   };
 
   // ============================================
-  // CRIAÇÃO DE HISTÓRICO FICTÍCIO (FALLBACK)
-  // ============================================
-  function buildInitialHistory(assetCode, currentPrice, count = 50) {
-    const candles = [];
-    let price = currentPrice || 10000;
-    for (let i = 0; i < count; i++) {
-      const variation = (Math.random() - 0.5) * 0.002;
-      const open = price;
-      const close = price * (1 + variation);
-      const high = Math.max(open, close) * (1 + Math.random() * 0.001);
-      const low = Math.min(open, close) * (1 - Math.random() * 0.001);
-      candles.push({
-        open: open,
-        high: high,
-        low: low,
-        close: close,
-        volume: Math.floor(Math.random() * 900) + 100,
-        timestamp: Date.now() - (count - i) * 60000
-      });
-      price = close;
-    }
-    state.priceHistory[assetCode] = candles;
-  }
-
-  // ============================================
-  // MOTOR DE SINAIS
+  // MOTOR DE SINAIS (PRÓXIMA VELA)
   // ============================================
   function analyzeAsset(asset, bot) {
     const history = state.priceHistory[asset.code];
     if (!history || history.length < 20) return null;
 
     const currentPrice = state.currentPrices[asset.code];
-    if (!currentPrice) return null;
-
     let score = 50;
     let direction = null;
     let reasons = [];
@@ -359,51 +380,26 @@
       score, payout, price: currentPrice, reasons: reasons.slice(0, 3),
       indicators: indicatorsUsed, market: asset.type,
       timeframe: state.settings.timeframe,
-      timestamp: new Date(), // garantido como Date válido
-      targetCandle: times.next,
+      timestamp: new Date(),
+      targetCandle: times.next,  // PRÓXIMA VELA!
       arrow: direction === 'CALL' ? '↗' : '↘'
     };
   }
 
-  // ============================================
-  // FUNÇÃO PARA ATUALIZAR VALOR DO TRADE
-  // ============================================
-  function updateTradeAmount() {
-    const base = parseFloat(document.getElementById('configTradeAmount')?.value) || 1;
-    const martingale = document.getElementById('configMartingale')?.checked || false;
-    const maxDobras = parseInt(document.getElementById('configMaxMartingale')?.value) || 5;
-
-    state.tradeSettings.baseAmount = base;
-    state.tradeSettings.martingaleActive = martingale;
-    state.tradeSettings.maxMartingale = maxDobras;
-
-    if (!martingale) {
-      state.tradeSettings.currentAmount = base;
-    } else {
-      if (state.tradeSettings.currentAmount === 0) {
-        state.tradeSettings.currentAmount = base;
-      }
-    }
-
-    const display = document.getElementById('currentTradeAmount');
-    if (display) display.textContent = `$${state.tradeSettings.currentAmount.toFixed(2)}`;
-  }
-
-  // ============================================
-  // GERAR SINAL E EXECUTAR ORDEM AUTOMATICAMENTE
-  // ============================================
   async function generateNextCandleSignal() {
-    const asset = ASSETS.open.find(a => a.code === '1HZ100V');
-    if (!asset) return;
+    let availableAssets = [];
+    if (state.market === 'all') availableAssets = [...ASSETS.open, ...ASSETS.otc];
+    else if (state.market === 'open') availableAssets = [...ASSETS.open];
+    else availableAssets = [...ASSETS.otc];
 
-    if (!state.currentPrices[asset.code]) {
-      state.currentPrices[asset.code] = asset.basePrice;
+    const selectedAsset = document.getElementById('filterAsset')?.value;
+    if (selectedAsset && selectedAsset !== 'all') {
+      availableAssets = availableAssets.filter(a => a.code.includes(selectedAsset));
     }
 
-    if (!state.priceHistory[asset.code] || state.priceHistory[asset.code].length < 20) {
-      buildInitialHistory(asset.code, state.currentPrices[asset.code], 50);
-    }
+    if (availableAssets.length === 0) return;
 
+    const asset = availableAssets[getRandomInt(0, availableAssets.length - 1)];
     const activeBotList = BOTS.filter(b => state.activeBots.has(b.name));
     if (activeBotList.length === 0) return;
     const bot = activeBotList[getRandomInt(0, activeBotList.length - 1)];
@@ -411,6 +407,7 @@
     let signal = analyzeAsset(asset, bot);
     if (!signal) return;
 
+    // 🧠 APLICA IA — extrai features e ajusta score
     if (window.LottusAI) {
       const candles = state.priceHistory[asset.code] || [];
       signal = await window.LottusAI.enhanceSignal(signal, candles);
@@ -420,8 +417,10 @@
     state.signalsToday++;
     BOTS.find(b => b.name === signal.bot).signals++;
 
+    // Mostra banner ativo
     showActiveSignal(signal);
 
+    // Adiciona ao grid
     const grid = document.getElementById('signalsGrid');
     if (grid) {
       const card = createSignalElement(signal, true);
@@ -429,39 +428,13 @@
       if (grid.children.length > CONFIG.maxSignals) grid.lastChild.remove();
     }
 
+    // Notificação
     if (document.getElementById('notifSound')?.checked) {
       document.getElementById('alertSound')?.play().catch(() => {});
     }
 
-    // ============================================
-    // 🚀 EXECUÇÃO AUTOMÁTICA DA ORDEM
-    // ============================================
-    const shouldAutoExecute = CONFIG.autoConfirm &&
-                              (signal.score >= 80 || (signal.aiBoost && signal.score >= 85));
-
-    if (state.orderInProgress) {
-      console.log('⏳ Ordem em andamento. Aguardando resolução...');
-      return;
-    }
-
-    if (shouldAutoExecute && window.DerivIntegration) {
-      const tradeAmount = state.tradeSettings.currentAmount || state.tradeSettings.baseAmount;
-
-      console.log(`🚀 Executando ordem automática: ${signal.directionLabel} em ${signal.pair} (score ${signal.score}) - Valor: $${tradeAmount.toFixed(2)}`);
-      window.DerivIntegration.placeOrder(signal.direction.toUpperCase(), tradeAmount);
-
-      state.orderInProgress = true;
-
-      const confirmBtn = document.getElementById('btnConfirmEntry');
-      if (confirmBtn) {
-        confirmBtn.textContent = '✅ Ordem Executada!';
-        confirmBtn.classList.add('auto-confirmed');
-        setTimeout(() => {
-          confirmBtn.textContent = '✅ Confirmar Entrada';
-          confirmBtn.classList.remove('auto-confirmed');
-        }, 5000);
-      }
-    } else if (CONFIG.autoConfirm && signal.score >= 70) {
+    // Auto-confirmar se score > 80 (ou score com IA > 85)
+    if (CONFIG.autoConfirm && (signal.score >= 80 || (signal.aiBoost && signal.score >= 85))) {
       setTimeout(() => {
         if (state.currentSignal === signal) {
           document.getElementById('btnConfirmEntry')?.classList.add('auto-confirmed');
@@ -476,6 +449,8 @@
   async function resolveSignal() {
     if (!state.currentSignal) return;
 
+    // Simula resultado na próxima vela
+    // 🧠 IA influencia o resultado: quanto maior o aiConfidence, mais provável o win
     let winProbability = state.currentSignal.score / 100;
     if (state.currentSignal.aiConfidence) {
       winProbability = (winProbability + state.currentSignal.aiConfidence) / 2;
@@ -487,43 +462,14 @@
 
     if (isWin) state.winCount++; else state.lossCount++;
 
-    // ============================================
-    // GESTÃO DE CAPITAL / MARTINGALE
-    // ============================================
-    if (isWin) {
-      state.tradeSettings.currentAmount = state.tradeSettings.baseAmount;
-      state.tradeSettings.consecutiveLosses = 0;
-      console.log(`✅ Win! Valor resetado para $${state.tradeSettings.currentAmount.toFixed(2)}`);
-    } else {
-      state.tradeSettings.consecutiveLosses++;
-      if (state.tradeSettings.martingaleActive) {
-        const maxDobras = state.tradeSettings.maxMartingale;
-        if (state.tradeSettings.consecutiveLosses <= maxDobras) {
-          state.tradeSettings.currentAmount = Math.min(
-            state.tradeSettings.currentAmount * 2,
-            state.tradeSettings.baseAmount * Math.pow(2, maxDobras)
-          );
-          console.log(`❌ Loss! Nova aposta: $${state.tradeSettings.currentAmount.toFixed(2)} (${state.tradeSettings.consecutiveLosses}ª perda consecutiva)`);
-        } else {
-          console.warn(`⚠️ Limite máximo de dobras atingido (${maxDobras}). Mantendo valor atual.`);
-        }
-      } else {
-        state.tradeSettings.currentAmount = state.tradeSettings.baseAmount;
-        console.log(`❌ Loss! Martingale desativado. Valor mantido em $${state.tradeSettings.currentAmount.toFixed(2)}`);
-      }
-    }
-
-    const display = document.getElementById('currentTradeAmount');
-    if (display) display.textContent = `$${state.tradeSettings.currentAmount.toFixed(2)}`;
-
-    state.orderInProgress = false;
-
+    // 🧠 ENSINA A IA com o resultado real
     if (window.LottusAI) {
       await window.LottusAI.learn(state.currentSignal, isWin ? 'win' : 'loss');
     }
 
     addToHistory(state.currentSignal);
 
+    // Atualiza timeline
     const resultEl = document.getElementById('timelineResult');
     if (resultEl) {
       resultEl.textContent = isWin ? '✅' : '❌';
@@ -531,6 +477,7 @@
       resultEl.style.borderColor = isWin ? 'var(--accent-green)' : 'var(--accent-red)';
     }
 
+    // Limpa banner
     hideActiveSignal();
     state.currentSignal = null;
 
@@ -556,8 +503,7 @@
 
     const reasonsContainer = document.getElementById('activeReasons');
     if (reasonsContainer) {
-      const reasons = signal.reasons || [];
-      reasonsContainer.innerHTML = reasons.map(r => `<span>${r}</span>`).join('');
+      reasonsContainer.innerHTML = signal.reasons.map(r => `<span>${r}</span>`).join('');
     }
 
     section.style.display = 'block';
@@ -583,12 +529,11 @@
       ? '<span class="lt-signal-badge otc">OTC</span>'
       : '<span class="lt-signal-badge open">ABERTO</span>';
 
-    const reasons = signal.reasons || [];
-    const reasonsHtml = reasons.map(r => `<span>${r}</span>`).join('<span>·</span>');
-
+    const reasonsHtml = signal.reasons.map(r => `<span>${r}</span>`).join('<span>·</span>');
     const times = getCurrentCandleTimes();
     const msToNext = times.next - new Date();
 
+    // 🧠 Info da IA
     let aiHtml = '';
     if (signal.aiBoost && signal.aiBoost !== 0) {
       const boostSign = signal.aiBoost > 0 ? '+' : '';
@@ -606,9 +551,6 @@
         '🧠 IA: aprendendo...';
       aiPredictionHtml = `<div class="lt-ai-prediction ${predClass}">${predText}</div>`;
     }
-
-    // 🔧 Garantir que timestamp seja exibido com segurança
-    const timeStr = signal.timestamp ? formatTime(signal.timestamp) : '—';
 
     card.innerHTML = `
       <div class="lt-signal-arrow">${signal.arrow}</div>
@@ -631,7 +573,7 @@
           score ${signal.score}${signal.originalScore ? ` <span style="color:var(--text-dim);font-size:10px;">(was ${signal.originalScore})</span>` : ''}
         </div>
         <div style="font-size:11px;color:var(--accent-cyan);margin-top:2px;">payout ${signal.payout}%</div>
-        <div class="lt-signal-time">${timeStr}</div>
+        <div class="lt-signal-time">${formatTime(signal.timestamp)}</div>
       </div>
     `;
 
@@ -720,7 +662,7 @@
           <div class="lt-empty-state">
             <div class="lt-empty-icon">📋</div>
             <p>Nenhum sinal no histórico</p>
-            <p class="lt-empty-sub">Aguardando sinais da Deriv...</p>
+            <p class="lt-empty-sub">Conecte uma corretora para começar</p>
           </div>
         </td></tr>
       `;
@@ -762,7 +704,10 @@
     const width = canvas.width, height = canvas.height;
     const padding = { top: 20, right: 60, bottom: 30, left: 10 };
 
-    const history = state.priceHistory['1HZ100V'] || [];
+    const selectedAsset = document.getElementById('filterAsset')?.value || 'EURUSD';
+    const assetCode = selectedAsset === 'all' ? 'EURUSD' : selectedAsset;
+    const history = state.priceHistory[assetCode + '_OTC'] || state.priceHistory[assetCode] || [];
+
     if (history.length < 2) return;
 
     const visibleCandles = history.slice(-40);
@@ -773,6 +718,7 @@
 
     ctx.clearRect(0, 0, width, height);
 
+    // Grid
     ctx.strokeStyle = 'rgba(30,30,46,0.5)';
     ctx.lineWidth = 1;
     for (let i = 0; i < 5; i++) {
@@ -783,6 +729,7 @@
       ctx.fillText(price.toFixed(5), width - 5, y + 3);
     }
 
+    // Candles
     const candleWidth = (width - padding.left - padding.right) / visibleCandles.length * 0.7;
     const candleGap = (width - padding.left - padding.right) / visibleCandles.length;
 
@@ -803,6 +750,7 @@
       ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
     });
 
+    // EMA20
     const ema20 = visibleCandles.map((_, i) => {
       const slice = visibleCandles.slice(0, i + 1);
       return Indicators.ema(slice, Math.min(20, slice.length));
@@ -816,6 +764,7 @@
     });
     ctx.stroke();
 
+    // Indica sinal ativo no gráfico
     if (state.currentSignal) {
       const lastCandle = visibleCandles[visibleCandles.length - 1];
       const x = padding.left + (visibleCandles.length - 1) * candleGap + candleGap / 2;
@@ -854,7 +803,7 @@
       else if (state.connected) { dot.className = 'lt-status-dot connected'; text.textContent = 'Conectado'; }
       else { dot.className = 'lt-status-dot'; text.textContent = 'Desconectado'; }
     }
-    if (broker) broker.textContent = state.broker || 'Deriv';
+    if (broker) broker.textContent = state.broker || 'Nenhuma';
     if (tf) tf.textContent = state.settings.timeframe;
     if (latency) latency.textContent = state.connected ? getRandomInt(45, 120) + 'ms' : '—';
   }
@@ -900,6 +849,7 @@
     const boostsEl = document.getElementById('aiBoosts');
     if (boostsEl) boostsEl.textContent = state.signalsToday;
     
+    // Atualiza barras de peso
     const weightsGrid = document.getElementById('aiWeightsGrid');
     if (weightsGrid) {
       weightsGrid.innerHTML = Object.entries(stats.indicatorWeights).map(([name, weight]) => {
@@ -919,7 +869,6 @@
   }
 
   function showSignalDetails(signal) {
-    const reasons = signal.reasons || [];
     const details = [
       `🎯 SINAL PARA PRÓXIMA VELA`,
       ``,
@@ -931,7 +880,7 @@
       `💵 Preço atual: ${formatPrice(signal.price)}`,
       `📈 Indicadores: ${signal.indicators.join(', ')}`,
       `📝 Razões:`,
-      ...reasons.map(r => `   • ${r}`),
+      ...signal.reasons.map(r => `   • ${r}`),
       ``,
       signal.aiBoost ? `🧠 IA Boost: ${signal.aiBoost > 0 ? '+' : ''}${signal.aiBoost} pontos` : '',
       signal.aiReasons && signal.aiReasons.length > 0 ? `🧠 Razões da IA:` : '',
@@ -965,6 +914,28 @@
         if (view === 'config') renderConfig();
         if (view === 'history') renderHistory();
       });
+    });
+
+    document.getElementById('btnConnect')?.addEventListener('click', connectBroker);
+    document.getElementById('btnConnectHero')?.addEventListener('click', connectBroker);
+    document.getElementById('btnConnectChart')?.addEventListener('click', connectBroker);
+
+    document.getElementById('btnSimulate')?.addEventListener('click', () => {
+      CONFIG.simulationMode = true;
+      state.connected = true;
+      state.broker = 'Simulação';
+      updateStatusBar();
+      document.getElementById('chartOverlay').style.display = 'none';
+      document.getElementById('signalsSubtitle').textContent = 'Modo simulação — Sinais para próxima vela';
+      document.getElementById('liveStatus').textContent = 'simulação';
+    });
+
+    document.getElementById('btnSaveConfig')?.addEventListener('click', saveConfig);
+    document.getElementById('btnTestConnection')?.addEventListener('click', testConnection);
+
+    document.getElementById('configBroker')?.addEventListener('change', (e) => {
+      const customGroup = document.getElementById('customBrokerGroup');
+      if (customGroup) customGroup.style.display = e.target.value === 'custom' ? 'block' : 'none';
     });
 
     document.getElementById('filterMarket')?.addEventListener('change', (e) => { state.market = e.target.value; updateStatusBar(); });
@@ -1004,6 +975,46 @@
     });
   }
 
+  function connectBroker() {
+    if (state.connected || state.connecting) return;
+    state.connecting = true;
+    updateStatusBar();
+    setTimeout(() => {
+      state.connecting = false;
+      state.connected = true;
+      state.broker = 'Corretora Conectada';
+      updateStatusBar();
+      document.getElementById('chartOverlay').style.display = 'none';
+      document.getElementById('signalsSubtitle').textContent = 'Sinais para próxima vela em tempo real';
+      document.getElementById('liveStatus').textContent = 'ao vivo';
+    }, 2000);
+  }
+
+  function saveConfig() {
+    const broker = document.getElementById('configBroker')?.value;
+    const apiKey = document.getElementById('configApiKey')?.value;
+    const apiSecret = document.getElementById('configApiSecret')?.value;
+
+    if (!broker) { alert('Selecione uma corretora!'); return; }
+    if (!apiKey || !apiSecret) { alert('Preencha API Key e API Secret!'); return; }
+
+    CONFIG.signalTiming = document.getElementById('configSignalTiming')?.value || 'early';
+    CONFIG.autoConfirm = document.getElementById('configAutoConfirm')?.checked || false;
+    CONFIG.showCountdown = document.getElementById('configShowCountdown')?.checked || true;
+
+    localStorage.setItem('lt_config', JSON.stringify({ broker, apiKey, apiSecret }));
+    alert('✅ Configurações salvas!');
+  }
+
+  function testConnection() {
+    const btn = document.getElementById('btnTestConnection');
+    btn.textContent = 'Testando...'; btn.disabled = true;
+    setTimeout(() => {
+      btn.textContent = '✅ Conexão OK'; btn.style.color = 'var(--accent-green)';
+      setTimeout(() => { btn.textContent = 'Testar Conexão'; btn.disabled = false; btn.style.color = ''; }, 2000);
+    }, 1500);
+  }
+
   function renderConfig() {
     const container = document.getElementById('robotsConfig');
     if (!container) return;
@@ -1027,76 +1038,46 @@
   // BOOTSTRAP
   // ============================================
   async function init() {
+    // Inicializa IA
     if (window.LottusAI) {
       await window.LottusAI.init();
       updateAIDashboard();
     }
+    initPriceSimulation();
 
     const botsGrid = document.getElementById('botsGrid');
     if (botsGrid) BOTS.forEach(bot => botsGrid.appendChild(createBotElement(bot)));
 
     initNavigation();
 
-    document.getElementById('configTradeAmount')?.addEventListener('change', updateTradeAmount);
-    document.getElementById('configMartingale')?.addEventListener('change', updateTradeAmount);
-    document.getElementById('configMaxMartingale')?.addEventListener('change', updateTradeAmount);
-
-    // SELETOR DE CONTA DEMO/REAL
-    const accountTypeSelect = document.getElementById('configAccountType');
-    if (accountTypeSelect) {
-      const currentType = window.DerivIntegration?.getAccountType?.() || 'demo';
-      accountTypeSelect.value = currentType;
-      accountTypeSelect.addEventListener('change', (e) => {
-        const type = e.target.value;
-        if (window.DerivIntegration && window.DerivIntegration.switchAccount) {
-          window.DerivIntegration.switchAccount(type);
-          const statusText = document.getElementById('statusText');
-          if (statusText) statusText.textContent = `Deriv ${type === 'real' ? 'Real' : 'Demo'}`;
-          const brokerName = document.getElementById('brokerName');
-          if (brokerName) brokerName.textContent = `Deriv ${type === 'real' ? 'Real' : 'Demo'}`;
-        }
-      });
-    }
-
-    document.getElementById('configSignalTiming').value = CONFIG.signalTiming;
-    document.getElementById('configAutoConfirm').checked = CONFIG.autoConfirm;
-    document.getElementById('configShowCountdown').checked = CONFIG.showCountdown;
-
-    document.getElementById('configSignalTiming')?.addEventListener('change', (e) => {
-      CONFIG.signalTiming = e.target.value;
-    });
-    document.getElementById('configAutoConfirm')?.addEventListener('change', (e) => {
-      CONFIG.autoConfirm = e.target.checked;
-    });
-    document.getElementById('configShowCountdown')?.addEventListener('change', (e) => {
-      CONFIG.showCountdown = e.target.checked;
-    });
-
-    updateTradeAmount();
-
+    // Timer principal — atualiza a cada 100ms para contagem suave
     state.timerInterval = setInterval(() => {
       updateCandleTimer();
       drawChart();
     }, 100);
 
+    // Sinais iniciais
     const grid = document.getElementById('signalsGrid');
     if (grid) {
-      setTimeout(() => {
-        for (let i = 0; i < 3; i++) {
-          const signal = generateNextCandleSignal();
-          if (signal && grid.children.length < CONFIG.maxSignals) {
-            grid.appendChild(createSignalElement(signal));
-          }
+      for (let i = 0; i < 3; i++) {
+        const signal = generateNextCandleSignal();
+        if (signal && grid.children.length < CONFIG.maxSignals) {
+          grid.appendChild(createSignalElement(signal));
         }
-      }, 2000);
+      }
     }
 
     updateStats();
 
+    const savedConfig = localStorage.getItem('lt_config');
+    if (savedConfig) {
+      const config = JSON.parse(savedConfig);
+      const brokerSelect = document.getElementById('configBroker');
+      if (brokerSelect) brokerSelect.value = config.broker;
+    }
+
     console.log('⚡ Lottus Trading PRO V2 inicializado!');
-    console.log('🎯 Sinais para PRÓXIMA VELA com dados da Deriv');
-    console.log('🚀 Execução automática de ordens ativada');
-    console.log('💰 Martingale: ' + (state.tradeSettings.martingaleActive ? 'ATIVO' : 'DESATIVADO'));
+    console.log('🎯 Sinais para PRÓXIMA VELA');
     console.log('⏱️ Timer ativo');
   }
 
@@ -1105,7 +1086,5 @@
   } else {
     init();
   }
-
-  window.__lottusState = state;
 
 })();
