@@ -167,10 +167,8 @@ JSON.parse(msg.toString());
 
 
 console.log(
-"DERIV ORDER RESPONSE",
-data
+JSON.stringify(data, null, 2)
 );
-
 
 
 if(data.error){
