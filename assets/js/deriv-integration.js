@@ -12,7 +12,7 @@
   const CONFIG = {
     SYMBOL: '1HZ100V',
     APP_ID: '1089',
-    TOKEN: 'pat_73351b5beca33d80904336173ce710bc9a7ab74aca01607baa2bb95a6299f24c',
+    TOKEN: 'pat_792a24c9bdbfeeeb2c2645359f87e01c5e754dfbe6fedd0ba08653d865afd706',
     TRADE_AMOUNT: 1,
     DURATION_MINUTES: 5,
   };
