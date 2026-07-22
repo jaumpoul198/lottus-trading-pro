@@ -1,17 +1,17 @@
 /**
  * DERIV INTEGRATION - Lottus Trading Pro V2
- * Credenciais configuradas - Fluxo corrigido (Proposal -> Buy)
+ * Conexão direta via WebSocket (Sem problemas de CORS)
  */
 
 (function() {
   'use strict';
 
   // ============================================
-  // SUAS CREDENCIAIS
+  // SUAS CREDENCIAIS OFICIAIS
   // ============================================
   const CONFIG = {
     SYMBOL: '1HZ100V',
-    APP_ID: '33U82t6Vj2gIXRthyn79S', 
+    APP_ID: '33U82t6Vj2gIXRthyn79S',
     TOKEN: 'pat_c16ca87f8d01fa73b2c02adb165380896922f623b73e1362434af3ef564f1611',
     TRADE_AMOUNT: 1,
     DURATION_MINUTES: 5,
@@ -25,145 +25,82 @@
   };
 
   // ============================================
-  // CONECTAR (REST + OTP)
+  // CONECTAR DIRETO NO WEBSOCKET V3
   // ============================================
-  async function connect() {
-    if (!CONFIG.APP_ID || !CONFIG.TOKEN) {
-      console.error('❌ Credenciais não configuradas.');
-      return;
-    }
+  function connect() {
+    console.log('🔗 Conectando ao WebSocket raiz da Deriv...');
+    
+    // Conecta usando o App ID
+    state.ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${CONFIG.APP_ID}`);
 
-    try {
-      console.log('🔗 Obtendo OTP via REST...');
-      const accRes = await fetch('https://api.derivws.com/trading/v1/options/accounts', {
-        headers: {
-          'Deriv-App-ID': CONFIG.APP_ID,
-          'Authorization': `Bearer ${CONFIG.TOKEN}`
-        }
-      });
+    state.ws.onopen = () => {
+      console.log('✅ WebSocket conectado. Solicitando autorização...');
+      state.connected = true;
       
-      if (!accRes.ok) {
-        const text = await accRes.text();
-        console.error(`❌ Erro HTTP ${accRes.status}:`, text);
-        return;
-      }
-      
-      const accData = await accRes.json();
-      if (accData.error) {
-        console.error('❌ Erro na API:', accData.error);
+      // Envia a chave PAT para autorizar
+      state.ws.send(JSON.stringify({ authorize: CONFIG.TOKEN }));
+    };
+
+    state.ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+
+      if (data.error) {
+        console.error('❌ Erro da Deriv:', data.error.message);
         return;
       }
 
-      const accounts = accData.data || accData.accounts || [];
-      if (accounts.length === 0) {
-        console.error('❌ Nenhuma conta encontrada.');
-        return;
-      }
-      console.log(`📋 Contas encontradas:`, accounts.map(a => ({ id: a.account_id, is_demo: a.is_demo })));
-
-      const demo = accounts.find(a => a.is_demo === true) || accounts[0];
-      console.log(`✅ Usando conta: ${demo.account_id}`);
-
-      const otpRes = await fetch(
-        `https://api.derivws.com/trading/v1/options/accounts/${demo.account_id}/otp`,
-        {
-          headers: {
-            'Deriv-App-ID': CONFIG.APP_ID,
-            'Authorization': `Bearer ${CONFIG.TOKEN}`
-          }
-        }
-      );
-      if (!otpRes.ok) {
-        const text = await otpRes.text();
-        console.error(`❌ Erro ao obter OTP: ${otpRes.status}`, text);
-        return;
-      }
-      const otpData = await otpRes.json();
-      if (otpData.error) {
-        console.error('❌ Erro no OTP:', otpData.error);
-        return;
-      }
-      const wsUrl = otpData.websocket_url || otpData.data?.url;
-      if (!wsUrl) {
-        console.error('❌ OTP não gerado.');
-        return;
-      }
-
-      console.log('🔗 Conectando WebSocket...');
-      state.ws = new WebSocket(wsUrl);
-
-      state.ws.onopen = () => {
-        console.log('✅ WebSocket conectado.');
-        state.connected = true;
+      // 1. Autorização Aceita
+      if (data.msg_type === 'authorize') {
+        console.log(`✅ Autorizado com sucesso! Logado na conta: ${data.authorize.loginid}`);
         state.authorized = true;
-        state.ws.send(JSON.stringify({ subscribe: 1, ticks: CONFIG.SYMBOL }));
-        console.log(`📡 Assinando ticks para ${CONFIG.SYMBOL}`);
         
-        // Atualiza interface
+        // Começa a escutar os preços do ativo
+        state.ws.send(JSON.stringify({ subscribe: 1, ticks: CONFIG.SYMBOL }));
+        
+        // Atualiza os textos do painel
         const statusText = document.getElementById('statusText');
         if (statusText) statusText.textContent = 'Deriv Conectado';
         const brokerName = document.getElementById('brokerName');
         if (brokerName) brokerName.textContent = 'Deriv';
+      }
+
+      // 2. Atualização de Preço
+      if (data.msg_type === 'tick') {
+        state.lastPrice = data.tick.quote;
         if (window.__lottusState) {
-          window.__lottusState.connected = true;
-          window.__lottusState.broker = 'Deriv';
+          window.__lottusState.currentPrices[CONFIG.SYMBOL] = data.tick.quote;
         }
-      };
+      }
 
-      state.ws.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        
-        // 1. Recebe Ticks
-        if (data.tick) {
-          state.lastPrice = data.tick.quote;
-          if (window.__lottusState) {
-            window.__lottusState.currentPrices[CONFIG.SYMBOL] = data.tick.quote;
-          }
-        }
+      // 3. Recebeu a Cotação -> Envia a Ordem de Compra
+      if (data.msg_type === 'proposal') {
+        console.log(`🛒 Cotação recebida (ID: ${data.proposal.id}). Executando compra...`);
+        state.ws.send(JSON.stringify({
+          buy: data.proposal.id,
+          price: data.proposal.ask_price
+        }));
+      }
 
-        // 2. Recebe a Cotação (Proposal) e dispara a Compra (Buy)
-        if (data.msg_type === 'proposal') {
-          if (data.error) {
-            console.error('❌ Erro na cotação:', data.error.message);
-            return;
-          }
-          console.log(`🛒 Cotação recebida! ID: ${data.proposal.id}. Executando compra...`);
-          
-          state.ws.send(JSON.stringify({
-            buy: data.proposal.id,
-            price: data.proposal.ask_price
-          }));
-        }
+      // 4. Confirmação de Compra!
+      if (data.msg_type === 'buy') {
+        console.log('💰 ✅ ORDEM EXECUTADA COM SUCESSO:', data.buy);
+      }
+    };
 
-        // 3. Confirma a Compra
-        if (data.msg_type === 'buy') {
-          console.log('✅ Ordem executada com sucesso:', data.buy);
-        }
-        
-        // 4. Captura Erros Gerais
-        if (data.error && data.msg_type !== 'proposal') {
-          console.error('❌ Erro da Deriv:', data.error.message || data.error);
-        }
-      };
+    state.ws.onclose = () => {
+      console.warn('⚠️ Desconectado. Tentando reconectar em 5s...');
+      state.connected = false;
+      state.authorized = false;
+      setTimeout(connect, 5000);
+    };
 
-      state.ws.onclose = () => {
-        console.warn('⚠️ Desconectado. Tentando reconectar em 5s...');
-        state.connected = false;
-        state.authorized = false;
-        setTimeout(connect, 5000);
-      };
-
-      state.ws.onerror = (err) => {
-        console.error('❌ Erro no WebSocket:', err);
-      };
-
-    } catch (err) {
-      console.error('❌ Falha na conexão:', err);
-    }
+    state.ws.onerror = (err) => {
+      console.error('❌ Erro no WebSocket:', err);
+    };
   }
 
   // ============================================
-  // ENVIAR ORDEM (Agora pedindo cotação primeiro)
+  // ENVIAR ORDEM (Pede a cotação primeiro)
   // ============================================
   function placeOrder(type, amount = CONFIG.TRADE_AMOUNT) {
     if (!state.authorized || !state.ws || state.ws.readyState !== WebSocket.OPEN) {
@@ -173,19 +110,17 @@
     
     const contractType = type === 'BUY' || type === 'CALL' ? 'CALL' : 'PUT';
 
-    const proposal = {
+    console.log(`📈 Solicitando cotação para ordem: ${contractType} $${amount}`);
+    state.ws.send(JSON.stringify({
       proposal: 1,
       amount: amount,
       basis: "stake",
       contract_type: contractType,
       currency: "USD",
       duration: CONFIG.DURATION_MINUTES,
-      duration_unit: 'm', // 'm' = minutos, 't' = ticks
+      duration_unit: 'm', 
       symbol: CONFIG.SYMBOL
-    };
-    
-    state.ws.send(JSON.stringify(proposal));
-    console.log(`📈 Solicitando cotação para ordem: ${contractType} $${amount}`);
+    }));
   }
 
   function isAuthorized() {
@@ -193,7 +128,7 @@
   }
 
   // ============================================
-  // EXPOR API
+  // EXPOR API E INICIAR
   // ============================================
   window.DerivIntegration = {
     connect,
@@ -203,12 +138,7 @@
     config: CONFIG,
   };
 
-  // ============================================
-  // INICIAR AUTOMATICAMENTE
-  // ============================================
-  console.log('🚀 Lottus Deriv Integration – credenciais carregadas.');
-  console.log('⏳ Tentando conectar automaticamente...');
-
+  console.log('🚀 Lottus Deriv Integration – iniciando motor WebSocket...');
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setTimeout(connect, 1500));
   } else {
