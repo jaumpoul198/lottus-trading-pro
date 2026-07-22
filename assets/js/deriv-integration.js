@@ -26,7 +26,9 @@ const state = {
 
     authorized:false,
 
-    lastPrice:null
+    lastPrice:null,
+
+    contractId:null
 
 };
 
@@ -40,16 +42,13 @@ async function connect(){
 
     try{
 
-
         console.log(
             '🔗 Conectando Lottus API Deriv...'
         );
 
 
-
         const response =
             await fetch('/api/deriv');
-
 
 
         const data =
@@ -125,15 +124,12 @@ async function connect(){
 
     }catch(error){
 
-
         console.error(
             '❌ Falha conexão Deriv:',
             error
         );
 
-
     }
-
 
 }
 
@@ -174,13 +170,12 @@ function atualizarInterface(){
 
     }
 
-
 }
 
 
 
 // ============================================
-// PREÇO ATUAL
+// PREÇO
 // ============================================
 
 function getPrice(){
@@ -192,19 +187,23 @@ function getPrice(){
 
 
 // ============================================
-// ORDENS (PREPARADO PARA PRÓXIMA ETAPA)
+// ENVIAR ORDEM REAL
 // ============================================
 
-async function placeOrder(type, amount = CONFIG.TRADE_AMOUNT){
+async function placeOrder(
+    type,
+    amount = CONFIG.TRADE_AMOUNT
+){
 
-    try {
+    try{
+
 
         console.log(
             '📈 Enviando ordem Deriv:',
             type,
-            CONFIG.SYMBOL,
             amount
         );
+
 
 
         const contractType =
@@ -214,36 +213,42 @@ async function placeOrder(type, amount = CONFIG.TRADE_AMOUNT){
 
 
 
-        const response = await fetch('/api/order', {
+        const response =
+            await fetch('/api/order',{
 
-            method:'POST',
+                method:'POST',
 
-            headers:{
-                'Content-Type':'application/json'
-            },
-
-            body:JSON.stringify({
-
-                contract_type: contractType,
-
-                amount: amount,
-
-                symbol: CONFIG.SYMBOL
-
-            })
-
-        });
+                headers:{
+                    'Content-Type':'application/json'
+                },
 
 
+                body:JSON.stringify({
 
-        const data = await response.json();
+                    contract_type:
+                        contractType,
+
+                    amount:
+                        amount,
+
+                    symbol:
+                        CONFIG.SYMBOL
+
+                })
+
+            });
+
+
+
+        const data =
+            await response.json();
 
 
 
         if(!response.ok){
 
             console.error(
-                '❌ Erro ordem Deriv:',
+                '❌ Erro ordem:',
                 data
             );
 
@@ -254,9 +259,28 @@ async function placeOrder(type, amount = CONFIG.TRADE_AMOUNT){
 
 
         console.log(
-            '✅ Ordem Deriv executada:',
+            '✅ Contrato criado:',
             data
         );
+
+
+
+        if(data.contract){
+
+            state.contractId =
+                data.contract.contract_id;
+
+
+            console.log(
+                '🎫 Contract ID:',
+                state.contractId
+            );
+
+
+            monitorContract();
+
+        }
+
 
 
         return data;
@@ -265,19 +289,150 @@ async function placeOrder(type, amount = CONFIG.TRADE_AMOUNT){
 
     }catch(error){
 
-
         console.error(
-            '❌ Falha envio ordem:',
+            '❌ Falha ordem:',
             error
         );
 
 
         return null;
 
-
     }
 
 }
+
+// ============================================
+// MONITORAR RESULTADO DO CONTRATO
+// ============================================
+
+async function monitorContract(){
+
+    if(!state.contractId){
+
+        console.warn(
+            '⚠️ Sem contract_id para monitorar'
+        );
+
+        return;
+
+    }
+
+
+
+    console.log(
+        '👀 Monitorando contrato:',
+        state.contractId
+    );
+
+
+
+    const timer = setInterval(async ()=>{
+
+
+        try{
+
+
+            const response =
+                await fetch(
+                    '/api/contract?id=' + state.contractId
+                );
+
+
+
+            const data =
+                await response.json();
+
+
+
+            if(!response.ok){
+
+                console.error(
+                    '❌ Erro consulta contrato:',
+                    data
+                );
+
+                return;
+
+            }
+
+
+
+            if(data.finished){
+
+
+                clearInterval(timer);
+
+
+
+                const isWin =
+                    Number(data.profit) > 0;
+
+
+
+                console.log(
+                    isWin
+                    ? '✅ WIN REAL Deriv'
+                    : '❌ LOSS REAL Deriv',
+
+                    data.profit
+                );
+
+
+
+                if(window.__lottusState){
+
+                    window.__lottusState.orderInProgress =
+                        false;
+
+                }
+
+
+
+                if(window.LottusAI &&
+                   window.__lottusState &&
+                   window.__lottusState.currentSignal){
+
+
+                    await window.LottusAI.learn(
+
+                        window.__lottusState.currentSignal,
+
+                        isWin
+                        ? 'win'
+                        : 'loss'
+
+                    );
+
+                }
+
+
+
+                state.contractId = null;
+
+
+            }
+
+
+
+        }catch(error){
+
+
+            console.error(
+                '❌ Erro monitoramento:',
+                error
+            );
+
+
+        }
+
+
+
+    },3000);
+
+
+}
+
+
 
 // ============================================
 // STATUS
@@ -314,7 +469,7 @@ window.DerivIntegration = {
 
 
 // ============================================
-// START AUTOMÁTICO
+// INICIALIZAÇÃO
 // ============================================
 
 console.log(
@@ -327,8 +482,11 @@ if(document.readyState === 'loading'){
 
 
     document.addEventListener(
+
         'DOMContentLoaded',
+
         ()=>setTimeout(connect,1500)
+
     );
 
 
