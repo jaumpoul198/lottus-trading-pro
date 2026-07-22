@@ -21,15 +21,20 @@ export default async function handler(req, res) {
 
 
   if (!appId || !token) {
+
     return res.status(500).json({
-      error: "Credenciais ausentes"
+      error: "Credenciais Deriv ausentes"
     });
+
   }
 
 
   try {
 
-    // 1 - pegar conta demo
+    console.log("🔗 Buscando conta Deriv");
+
+
+    // Buscar contas
     const accountsResponse = await fetch(
       "https://api.derivws.com/trading/v1/options/accounts",
       {
@@ -41,152 +46,245 @@ export default async function handler(req, res) {
     );
 
 
-    const accounts = await accountsResponse.json();
+    const accountsJson =
+      await accountsResponse.json();
 
 
-    const account =
-      accounts.data.find(
-        a => a.account_type === "demo"
-      );
-
-
-    if(!account){
-      throw new Error("Conta demo não encontrada");
-    }
-
-
-    // 2 - pegar OTP websocket
-    const otpResponse = await fetch(
-      `https://api.derivws.com/trading/v1/options/accounts/${account.account_id}/otp`,
-      {
-        method:"POST",
-        headers:{
-          "Deriv-App-ID": appId,
-          "Authorization": `Bearer ${token}`
-        }
-      }
+    console.log(
+      "Contas:",
+      accountsJson
     );
 
 
-    const otpData = await otpResponse.json();
+    if(!accountsJson.data){
+
+      throw new Error(
+        "Nenhuma conta encontrada"
+      );
+
+    }
 
 
-    const wsUrl =
-      otpData.data.url;
+    const demoAccount =
+      accountsJson.data.find(
+        acc => acc.account_type === "demo"
+      );
 
 
-    // 3 - conectar websocket novo
-    const ws = new WebSocket(wsUrl);
+    if(!demoAccount){
 
+      throw new Error(
+        "Conta demo não encontrada"
+      );
 
-    const result = await new Promise((resolve,reject)=>{
-
-
-      const timeout=setTimeout(()=>{
-
-        reject(
-          new Error("Timeout Deriv")
-        );
-
-      },20000);
+    }
 
 
 
-      ws.on("open",()=>{
+    console.log(
+      "Conta usada:",
+      demoAccount.account_id
+    );
 
 
-        console.log(
-          "WebSocket Options conectado"
-        );
+
+    // Buscar OTP
+    const otpResponse =
+      await fetch(
+
+        `https://api.derivws.com/trading/v1/options/accounts/${demoAccount.account_id}/otp`,
+
+        {
+          method:"POST",
+
+          headers:{
+            "Deriv-App-ID":appId,
+            "Authorization":`Bearer ${token}`
+          }
+
+        }
+
+      );
 
 
-        ws.send(JSON.stringify({
 
-          buy:1,
+    const otpJson =
+      await otpResponse.json();
 
-          price:amount,
 
-          parameters:{
 
-            amount:amount,
+    console.log(
+      "OTP:",
+      otpJson
+    );
 
-            basis:"stake",
 
-            contract_type,
 
-            currency:"USD",
+    if(!otpJson.data?.url){
 
-            duration:5,
+      throw new Error(
+        "OTP websocket não recebido"
+      );
 
-            duration_unit:"m",
+    }
 
-            symbol
+
+
+    const ws =
+      new WebSocket(
+        otpJson.data.url
+      );
+
+
+
+    const contract =
+      await new Promise((resolve,reject)=>{
+
+
+        const timeout =
+          setTimeout(()=>{
+
+            reject(
+              new Error(
+                "Timeout aguardando Deriv"
+              )
+            );
+
+          },30000);
+
+
+
+        ws.on("open",()=>{
+
+
+          console.log(
+            "✅ WebSocket Options aberto"
+          );
+
+
+
+          const order = {
+
+            buy:1,
+
+            price:Number(amount),
+
+            parameters:{
+
+              amount:Number(amount),
+
+              basis:"stake",
+
+              contract_type:
+                contract_type,
+
+              currency:"USD",
+
+              duration:5,
+
+              duration_unit:"m",
+
+              symbol:symbol
+
+            }
+
+          };
+
+
+
+          console.log(
+            "📤 Enviando BUY:",
+            order
+          );
+
+
+
+          ws.send(
+            JSON.stringify(order)
+          );
+
+
+        });
+
+
+
+
+        ws.on("message",(msg)=>{
+
+
+          const data =
+            JSON.parse(
+              msg.toString()
+            );
+
+
+
+          console.log(
+            "📥 DERIV:",
+            data
+          );
+
+
+
+          if(data.error){
+
+
+            clearTimeout(timeout);
+
+
+            reject(
+              new Error(
+                data.error.message
+              )
+            );
+
+
+            ws.close();
+
+            return;
 
           }
 
-        }));
 
 
-      });
+          if(data.buy){
 
 
-
-      ws.on("message",(msg)=>{
-
-
-        const data =
-          JSON.parse(msg.toString());
+            clearTimeout(timeout);
 
 
-        console.log(
-          "DERIV:",
-          data
-        );
+            resolve(
+              data.buy
+            );
 
 
+            ws.close();
 
-        if(data.error){
 
-          clearTimeout(timeout);
-
-          reject(
-            new Error(
-              data.error.message
-            )
-          );
-
-        }
+          }
 
 
 
-        if(data.buy){
+        });
+
+
+
+
+        ws.on("error",(err)=>{
 
 
           clearTimeout(timeout);
 
 
-          resolve(data.buy);
+          reject(err);
 
 
-          ws.close();
+        });
 
-        }
 
 
       });
 
-
-
-      ws.on("error",err=>{
-
-        clearTimeout(timeout);
-
-        reject(err);
-
-      });
-
-
-    });
 
 
 
@@ -194,13 +292,20 @@ export default async function handler(req, res) {
 
       status:"Contrato criado",
 
-      contract:result
+      contract:contract
 
     });
 
 
 
-  }catch(error){
+
+  } catch(error) {
+
+
+    console.error(
+      "❌ Erro ordem:",
+      error
+    );
 
 
     return res.status(400).json({
@@ -210,6 +315,7 @@ export default async function handler(req, res) {
       message:error.message
 
     });
+
 
   }
 
