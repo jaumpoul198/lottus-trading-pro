@@ -21,20 +21,62 @@ export default async function handler(req, res) {
 
 
   if (!appId || !token) {
-
     return res.status(500).json({
-      error:"Credenciais ausentes"
+      error: "Credenciais ausentes"
     });
-
   }
 
 
   try {
 
-
-    const ws = new WebSocket(
-      `wss://ws.derivws.com/websockets/v3?app_id=${appId}`
+    // 1 - pegar conta demo
+    const accountsResponse = await fetch(
+      "https://api.derivws.com/trading/v1/options/accounts",
+      {
+        headers:{
+          "Deriv-App-ID": appId,
+          "Authorization": `Bearer ${token}`
+        }
+      }
     );
+
+
+    const accounts = await accountsResponse.json();
+
+
+    const account =
+      accounts.data.find(
+        a => a.account_type === "demo"
+      );
+
+
+    if(!account){
+      throw new Error("Conta demo não encontrada");
+    }
+
+
+    // 2 - pegar OTP websocket
+    const otpResponse = await fetch(
+      `https://api.derivws.com/trading/v1/options/accounts/${account.account_id}/otp`,
+      {
+        method:"POST",
+        headers:{
+          "Deriv-App-ID": appId,
+          "Authorization": `Bearer ${token}`
+        }
+      }
+    );
+
+
+    const otpData = await otpResponse.json();
+
+
+    const wsUrl =
+      otpData.data.url;
+
+
+    // 3 - conectar websocket novo
+    const ws = new WebSocket(wsUrl);
 
 
     const result = await new Promise((resolve,reject)=>{
@@ -46,16 +88,41 @@ export default async function handler(req, res) {
           new Error("Timeout Deriv")
         );
 
-      },15000);
+      },20000);
 
 
 
       ws.on("open",()=>{
 
 
+        console.log(
+          "WebSocket Options conectado"
+        );
+
+
         ws.send(JSON.stringify({
 
-          authorize:token
+          buy:1,
+
+          price:amount,
+
+          parameters:{
+
+            amount:amount,
+
+            basis:"stake",
+
+            contract_type,
+
+            currency:"USD",
+
+            duration:5,
+
+            duration_unit:"m",
+
+            symbol
+
+          }
 
         }));
 
@@ -71,49 +138,22 @@ export default async function handler(req, res) {
           JSON.parse(msg.toString());
 
 
+        console.log(
+          "DERIV:",
+          data
+        );
+
+
 
         if(data.error){
 
           clearTimeout(timeout);
 
           reject(
-            new Error(data.error.message)
+            new Error(
+              data.error.message
+            )
           );
-
-        }
-
-
-
-        if(data.authorize){
-
-
-          ws.send(JSON.stringify({
-
-            buy:1,
-
-            price:amount,
-
-            parameters:{
-
-              amount:amount,
-
-              basis:"stake",
-
-              contract_type:contract_type,
-
-              currency:"USD",
-
-              duration:5,
-
-              duration_unit:"m",
-
-              symbol:symbol
-
-            }
-
-
-          }));
-
 
         }
 
@@ -130,10 +170,18 @@ export default async function handler(req, res) {
 
           ws.close();
 
-
         }
 
 
+      });
+
+
+
+      ws.on("error",err=>{
+
+        clearTimeout(timeout);
+
+        reject(err);
 
       });
 
@@ -144,7 +192,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
 
-      status:"Ordem executada",
+      status:"Contrato criado",
 
       contract:result
 
@@ -163,8 +211,6 @@ export default async function handler(req, res) {
 
     });
 
-
   }
-
 
 }
