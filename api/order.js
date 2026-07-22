@@ -19,6 +19,10 @@ const {
 const appId = process.env.DERIV_APP_ID;
 const token = process.env.DERIV_TOKEN;
 
+console.log("DERIV DEBUG", {
+    appId: appId,
+    tokenLength: token ? token.length : 0
+});
 
 if(!appId || !token){
 
