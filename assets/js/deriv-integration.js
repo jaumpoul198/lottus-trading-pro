@@ -36,6 +36,16 @@
     state.ws.onopen = () => {
       console.log('✅ WebSocket conectado. Solicitando autorização...');
       state.connected = true;
+
+      state.ws.onopen = () => {
+      console.log('✅ WebSocket conectado. Solicitando autorização...');
+      
+      // ADICIONE ESTA LINHA AQUI:
+      console.log('🕵️ Token que está sendo enviado:', CONFIG.TOKEN.substring(0, 15) + '...');
+      
+      state.connected = true;
+      state.ws.send(JSON.stringify({ authorize: CONFIG.TOKEN }));
+    };
       
       // Envia a chave PAT para autorizar
       state.ws.send(JSON.stringify({ authorize: CONFIG.TOKEN }));
