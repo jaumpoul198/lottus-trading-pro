@@ -1,212 +1,230 @@
 const WebSocket = require("ws");
 
-export default async function handler(req, res){
+export default async function handler(req,res){
 
-if(req.method !== "POST"){
-    return res.status(405).json({
-        error:"Método não permitido"
-    });
-}
+    if(req.method !== "POST"){
+        return res.status(405).json({
+            error:"Método não permitido"
+        });
+    }
 
 
-const {
-    contract_type,
-    amount,
-    symbol
-}=req.body;
+    const {
+        contract_type,
+        amount
+    } = req.body;
 
 
-const appId = process.env.DERIV_APP_ID;
-const token = process.env.DERIV_TOKEN;
+    const appId = process.env.DERIV_APP_ID;
+    const token = process.env.DERIV_TOKEN;
 
-console.log("DERIV DEBUG", {
-    appId: appId,
-    tokenLength: token ? token.length : 0
-});
 
-if(!appId || !token){
+    if(!appId || !token){
 
-    return res.status(500).json({
-        error:"Credenciais ausentes"
-    });
+        return res.status(500).json({
+            error:"Credenciais ausentes"
+        });
 
-}
+    }
 
 
-try{
+    try{
 
 
-const ws = new WebSocket(
-`wss://ws.derivws.com/websockets/v3?app_id=${appId}`
-);
+        const ws = new WebSocket(
+            `wss://ws.derivws.com/websockets/v3?app_id=${appId}`
+        );
 
 
 
-const contract = await new Promise((resolve,reject)=>{
+        const contract = await new Promise((resolve,reject)=>{
 
 
-let authorized=false;
+            let proposalId = null;
 
 
-const timeout=setTimeout(()=>{
+            const timeout=setTimeout(()=>{
 
-reject(
-new Error("Timeout Deriv")
-);
+                reject(
+                    new Error("Timeout Deriv")
+                );
 
-},20000);
+            },20000);
 
 
 
-ws.on("open",()=>{
+            ws.on("open",()=>{
 
 
-ws.send(JSON.stringify({
+                console.log(
+                    "WS ABERTO"
+                );
 
-authorize:token
 
-}));
+                ws.send(JSON.stringify({
 
+                    authorize:token
 
+                }));
 
-});
 
+            });
 
 
 
-ws.on("message",(msg)=>{
+            ws.on("message",(msg)=>{
 
 
-const data =
-JSON.parse(msg.toString());
+                const data =
+                    JSON.parse(msg.toString());
 
 
+                console.log(
+                    "DERIV RESPONSE",
+                    data
+                );
 
-console.log(
-"DERIV:",
-data
-);
 
 
+                if(data.error){
 
-if(data.error){
+                    clearTimeout(timeout);
 
-clearTimeout(timeout);
+                    reject(
+                        new Error(
+                            data.error.message
+                        )
+                    );
 
-reject(
-new Error(data.error.message)
-);
+                    return;
 
-}
+                }
 
 
 
-if(data.authorize){
+                if(data.authorize){
 
 
-authorized=true;
+                    console.log(
+                        "AUTORIZADO"
+                    );
 
 
+                    ws.send(JSON.stringify({
 
-ws.send(JSON.stringify({
+                        proposal:1,
 
-proposal:1,
+                        amount:Number(amount),
 
-amount:amount,
+                        basis:"stake",
 
-basis:"stake",
+                        contract_type:contract_type,
 
-contract_type:contract_type,
+                        currency:"USD",
 
-currency:"USD",
+                        duration:5,
 
-duration:5,
+                        duration_unit:"m",
 
-duration_unit:"m",
+                        symbol:"1HZ100V"
 
-symbol:symbol
+                    }));
 
-}));
 
+                }
 
 
-}
 
+                if(data.proposal){
 
 
-if(data.proposal){
+                    proposalId =
+                        data.proposal.id;
 
 
-ws.send(JSON.stringify({
 
-buy:data.proposal.id,
+                    console.log(
+                        "PROPOSTA",
+                        proposalId
+                    );
 
-price:amount
 
-}));
 
+                    ws.send(JSON.stringify({
 
+                        buy:proposalId,
 
-}
+                        price:Number(amount)
 
+                    }));
 
 
-if(data.buy){
+                }
 
 
-clearTimeout(timeout);
 
+                if(data.buy){
 
-resolve(data.buy);
 
+                    clearTimeout(timeout);
 
-ws.close();
 
+                    resolve(data.buy);
 
-}
 
+                    ws.close();
 
 
-});
+                }
 
 
 
-ws.on("error",(err)=>{
+            });
 
-clearTimeout(timeout);
 
-reject(err);
 
-});
+            ws.on("error",(err)=>{
 
+                clearTimeout(timeout);
 
-});
+                reject(err);
 
+            });
 
 
-return res.status(200).json({
+        });
 
-status:"Contrato criado",
 
-contract:contract
 
-});
+        return res.status(200).json({
 
+            status:"Contrato criado",
 
+            contract:contract
 
-}catch(error){
+        });
 
 
-return res.status(400).json({
 
-status:"Erro ordem",
+    }catch(error){
 
-message:error.message
 
-});
+        console.error(
+            "ORDER ERROR",
+            error
+        );
 
 
-}
+        return res.status(400).json({
+
+            status:"Erro ordem",
+
+            message:error.message
+
+        });
+
+
+    }
 
 
 }
