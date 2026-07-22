@@ -161,7 +161,15 @@
     }
 
     if (msToNext < 2000 && state.currentSignal) {
-      resolveSignal();
+
+      if (!state.orderInProgress) {
+
+        console.log(
+          '⏳ Aguardando resultado real da Deriv...'
+        );
+ 
+      }
+
     }
 
     return { msToNext, progress };
