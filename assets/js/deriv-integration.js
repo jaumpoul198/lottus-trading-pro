@@ -223,20 +223,14 @@ async function placeOrder(
                 },
 
 
-                body:JSON.stringify({
-
-                    contract_type:
-                        contractType,
-
-                    amount:
-                        amount,
-
-                    symbol:
-                        CONFIG.SYMBOL
-
+                body: JSON.stringify({
+                    contract_type: contractType,
+                    amount: amount,
+                    symbol: CONFIG.SYMBOL,
+                    account_id: 'DOT93838295', // A sua conta Demo que vimos no primeiro log
+                    duration: 1,               // Duração da ordem (ex: 1)
+                    duration_unit: 't'         // 't' para ticks (ou 'm' para minutos, se preferir)
                 })
-
-            });
 
 
 
