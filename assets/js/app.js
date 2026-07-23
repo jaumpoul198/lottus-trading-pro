@@ -452,8 +452,13 @@
       return;
     }
 
-    if (shouldAutoExecute && window.DerivIntegration) {
-      const tradeAmount = state.tradeSettings.currentAmount || state.tradeSettings.baseAmount;
+    if (
+      shouldAutoExecute &&
+      window.DerivIntegration &&
+      window.__lottusState &&
+      window.__lottusState.connected &&
+      window.__lottusState.authorized
+     ) {
 
       console.log(`🚀 Executando ordem automática: ${signal.directionLabel} em ${signal.pair} (score ${signal.score}) - Valor: $${tradeAmount.toFixed(2)}`);
       window.DerivIntegration.placeOrder(signal.direction.toUpperCase(), tradeAmount);
